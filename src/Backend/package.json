@@ -1,0 +1,19 @@
+{
+  "name": "green-bond-proto",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "hardhat test",
+    "oracle:setup": "node oracle/setupOracle.js",
+    "oracle:fund": "node oracle/fundUpdater.js",
+    "oracle:once": "node oracle/pushUpdate.js",
+    "oracle:loop": "node oracle/mockDataFeed.js"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "dotenv": "^17.2.2"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.4.0"
+  }
+}
