@@ -8,7 +8,8 @@ import ImpactOracleArtifact from './Backend/artifacts/contracts/ImpactOracle.sol
 
 // Environment variables (fallback to hardcoded values if needed)
 const ESCROW_ADDRESS = process.env.REACT_APP_ESCROW_ADDRESS || '0x5FbDB2315678afecb367f032d93F642f64180aa3';
-const BOND_TOKEN_ADDRESS = process.env.REACT_APP_BOND_TOKEN_ADDRESS; // Will be fetched from escrow
+// You can manually set this address if needed
+const BOND_TOKEN_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3"; // Default hardhat address
 const ORACLE_ADDRESS = process.env.REACT_APP_ORACLE_ADDRESS || '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512';
 const UPDATER_ADDRESS = process.env.REACT_APP_UPDATER_ADDRESS || '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
 const ORACLE_UPDATER_KEY = process.env.REACT_APP_ORACLE_UPDATER_KEY || '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
@@ -113,10 +114,8 @@ export function getContracts(signerOrProvider) {
     // Create oracle contract
     const oracle = new ethers.Contract(ORACLE_ADDRESS, ImpactOracleArtifact.abi, signerOrProvider);
     
-    // For bond token, we need to use an async function in the component to get the address
-    // But for now, use a placeholder that will be updated after fetching the token address
-    const bondTokenAddress = BOND_TOKEN_ADDRESS || ESCROW_ADDRESS; // Temporary placeholder
-    const bondToken = new ethers.Contract(bondTokenAddress, BondTokenArtifact.abi, signerOrProvider);
+    // Use the hard-coded bond token address
+    const bondToken = new ethers.Contract(BOND_TOKEN_ADDRESS, BondTokenArtifact.abi, signerOrProvider);
     
     return {
       escrow,

@@ -59,6 +59,8 @@ const EcoFiDashboard = () => {
   const [isIssuer, setIsIssuer] = useState(false);
   const [milestones, setMilestones] = useState([]);
   const [saleEnd, setSaleEnd] = useState(0);
+  const [refreshInterval, setRefreshInterval] = useState(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // State for impact data entry
   const [deltaKwh, setDeltaKwh] = useState('');
@@ -82,19 +84,94 @@ const EcoFiDashboard = () => {
     waterConserved: 0
   });
 
-  // Check if Hardhat is running when component mounts
-  useEffect(() => {
-    async function checkHardhatStatus() {
-      const status = await verifyHardhatRunning();
-      setHardhatRunning(status.running);
-      
-      if (!status.running) {
-        console.error('Hardhat node is not running:', status.error);
-      }
+  // Disconnect wallet function
+  const disconnectWallet = useCallback(() => {
+    // Clear connection state
+    setWalletConnected(false);
+    setWalletAddress('');
+    setProvider(null);
+    setSigner(null);
+    
+    // Clear contract data
+    setBondBalance('0');
+    setImpactScore(0);
+    setTotalRaised('0');
+    setTotalReleased('0');
+    setTokenPrice('0');
+    setTokensSold('0');
+    setCapTokens('0');
+    setCumulativeKwh(0);
+    setIsIssuer(false);
+    setMilestones([]);
+    
+    // Stop refresh interval
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
+      setRefreshInterval(null);
     }
     
-    checkHardhatStatus();
-  }, []);
+    // Show success message
+    showToast('Wallet disconnected successfully', 'success');
+    setProvider(null);
+    setSigner(null);
+    
+    // Clear any active data refresh intervals
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
+      setRefreshInterval(null);
+    }
+    
+    // Reset all data states to defaults
+    setBondBalance('0');
+    setImpactScore(0);
+    setTotalRaised('0');
+    setTotalReleased('0');
+    setTokenPrice('0');
+    setTokensSold('0');
+    setCapTokens('0');
+    setCumulativeKwh(0);
+    setIsIssuer(false);
+    setMilestones([]);
+    setSaleEnd(0);
+    
+    setTransactionHistory(prev => [...prev, { 
+      type: 'Wallet Disconnected', 
+      status: 'Success', 
+      time: new Date().toLocaleTimeString() 
+    }]);
+    
+    showToast('Wallet disconnected', 'info');
+  }, [refreshInterval, showToast]);
+
+  // Set up real-time data refresh
+  useEffect(() => {
+    const setupRealTimeRefresh = () => {
+      if (walletConnected && provider && walletAddress) {
+        // Clear any existing interval first
+        if (refreshInterval) {
+          clearInterval(refreshInterval);
+        }
+        
+        // Set up a new interval to refresh data every 10 seconds
+        const interval = setInterval(() => {
+          setIsRefreshing(true);
+          fetchContractData(provider, walletAddress)
+            .finally(() => setIsRefreshing(false));
+        }, 10000); // 10 seconds refresh
+        
+        setRefreshInterval(interval);
+        
+        // Return cleanup function
+        return () => {
+          clearInterval(interval);
+          setRefreshInterval(null);
+        };
+      }
+    };
+    
+    const cleanup = setupRealTimeRefresh();
+    return cleanup;
+  }, [walletConnected, provider, walletAddress, refreshInterval]);
 
   // Toast helper functions
   const showToast = useCallback((message, type = 'info') => {
@@ -464,6 +541,18 @@ const EcoFiDashboard = () => {
           <span>Hardhat node not detected</span>
         </div>
       )}
+      
+      <button 
+        onClick={() => {
+          setIsRefreshing(true);
+          fetchContractData(provider, walletAddress)
+            .finally(() => setIsRefreshing(false));
+        }}
+        className="ml-2 bg-gray-700/50 hover:bg-gray-700 rounded-full p-1 transition-colors"
+        title="Refresh Data"
+      >
+        <RefreshCw className="w-4 h-4" />
+      </button>
     </div>
   );
 
@@ -505,11 +594,25 @@ const EcoFiDashboard = () => {
             <div className="flex items-center gap-1">
               <CheckCircle2 className="w-3 h-3 text-green-400" />
               <span>Connected to Hardhat Local</span>
+              {isRefreshing && (
+                <div className="flex items-center text-xs text-gray-400 ml-2">
+                  <RefreshCw className="w-3 h-3 animate-spin mr-1" />
+                  Refreshing...
+                </div>
+              )}
             </div>
             <div className="text-gray-400 truncate text-xs mt-0.5">{walletAddress}</div>
           </div>
         )}
       </div>
+      
+      <button 
+        onClick={disconnectWallet}
+        className="bg-red-500/20 hover:bg-red-500/30 text-white rounded-full p-2 transition-colors"
+        title="Disconnect Wallet"
+      >
+        <LogOut className="w-4 h-4" />
+      </button>
     </div>
   );
 
@@ -888,73 +991,63 @@ const EcoFiDashboard = () => {
   );
 
   // Sample project data
-  const projectsData = [
-    {
-      id: 1,
-      name: "Solar Farm Alpha",
-      image: "https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80",
-      location: "California, USA",
-      description: "Large-scale solar farm generating clean energy for over 10,000 homes.",
-      impact: "15,000 tons CO2 reduction",
-      progress: 75
-    },
-    {
-      id: 2,
-      name: "Wind Energy Project",
-      image: "https://images.unsplash.com/photo-1548337138-e87d889cc369?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2074&q=80",
-      location: "Scotland, UK",
-      description: "Offshore wind farm with 50 turbines providing renewable energy.",
-      impact: "20,000 tons CO2 reduction",
-      progress: 60
-    },
-    {
-      id: 3,
-      name: "Hydro Power Initiative",
-      image: "https://images.unsplash.com/photo-1566841911190-83ddc8f5cf3f?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80",
-      location: "British Columbia, Canada",
-      description: "Sustainable hydroelectric power project with minimal environmental impact.",
-      impact: "12,500 tons CO2 reduction",
-      progress: 90
-    }
-  ];
+  // Instead of hardcoded projects, use real contract data
+  const getProjectData = useCallback(() => {
+    // Generate project data based on contract state
+    return [
+      {
+        id: 1,
+        name: "Green Bond Project",
+        image: "https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80",
+        location: "Global",
+        description: "Tokenized green bonds funding renewable energy and sustainable development projects.",
+        impact: `${environmentalImpact.co2Reduced.toLocaleString()} kg CO₂ reduction`,
+        progress: impactScore
+      }
+    ];
+  }, [environmentalImpact.co2Reduced, impactScore]);
 
   // Projects component
-  const Projects = () => (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-      {projectsData.map(project => (
-        <div key={project.id} className="glass-card p-6 rounded-2xl hover:shadow-xl hover:shadow-purple-500/10 transition-all duration-300">
-          <div 
-            className="h-40 rounded-xl mb-4 bg-cover bg-center" 
-            style={{ backgroundImage: `url(${project.image})` }}
-          />
-          <h3 className="text-xl font-bold text-white mb-1">{project.name}</h3>
-          <p className="text-gray-400 text-sm mb-3 flex items-center">
-            <Globe className="w-3 h-3 mr-1" />
-            {project.location}
-          </p>
-          <p className="text-gray-300 text-sm mb-4">{project.description}</p>
-          
-          <div className="mb-3">
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-gray-400">Progress</span>
-              <span className="text-white">{project.progress}%</span>
+  const Projects = () => {
+    const projectsData = getProjectData();
+    
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {projectsData.map(project => (
+          <div key={project.id} className="glass-card p-6 rounded-2xl hover:shadow-xl hover:shadow-purple-500/10 transition-all duration-300">
+            <div 
+              className="h-40 rounded-xl mb-4 bg-cover bg-center" 
+              style={{ backgroundImage: `url(${project.image})` }}
+            />
+            <h3 className="text-xl font-bold text-white mb-1">{project.name}</h3>
+            <p className="text-gray-400 text-sm mb-3 flex items-center">
+              <Globe className="w-3 h-3 mr-1" />
+              {project.location}
+            </p>
+            <p className="text-gray-300 text-sm mb-4">{project.description}</p>
+            
+            <div className="mb-3">
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-gray-400">Progress</span>
+                <span className="text-white">{project.progress}%</span>
+              </div>
+              <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-green-500 to-green-400"
+                  style={{ width: `${project.progress}%` }}
+                />
+              </div>
             </div>
-            <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-gradient-to-r from-green-500 to-green-400"
-                style={{ width: `${project.progress}%` }}
-              />
+            
+            <div className="flex items-center text-green-400 text-sm">
+              <Leaf className="w-4 h-4 mr-1" />
+              {project.impact}
             </div>
           </div>
-          
-          <div className="flex items-center text-green-400 text-sm">
-            <Leaf className="w-4 h-4 mr-1" />
-            {project.impact}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+        ))}
+      </div>
+    );
+  };
 
   // Tab navigation
   const tabs = [
