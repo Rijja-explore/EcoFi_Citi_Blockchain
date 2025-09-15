@@ -1,11 +1,12 @@
 import React from 'react';
-import UltimateEcoFiDashboard from './UltimateEcoFiDashboard';
+import EcoFiDashboard from './EcoFiDashboard';
 import './App.css';
+import './ecofi.css';
 
 function App() {
   return (
     <div className="App">
-      <UltimateEcoFiDashboard />
+      <EcoFiDashboard />
     </div>
   );
 }
