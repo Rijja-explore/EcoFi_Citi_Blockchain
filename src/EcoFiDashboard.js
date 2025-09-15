@@ -4,7 +4,7 @@ import {
   Wallet, CheckCircle, AlertTriangle, RefreshCw, Lock, 
   Award, Flame, BarChart3, Leaf, Globe, 
   Zap, DollarSign, TrendingUp, Database,
-  CheckCircle2, Sparkles, Wind, Lightbulb
+  CheckCircle2, Sparkles, Wind, Lightbulb, LogOut
 } from 'lucide-react';
 
 // Import enhanced particle background
@@ -83,6 +83,16 @@ const EcoFiDashboard = () => {
     energySaved: 0,
     waterConserved: 0
   });
+
+  // Toast helper functions
+  const showToast = useCallback((message, type = 'info') => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
+  }, []);
+
+  const removeToast = useCallback((id) => {
+    setToasts(prev => prev.filter(toast => toast.id !== id));
+  }, []);
 
   // Disconnect wallet function
   const disconnectWallet = useCallback(() => {
@@ -172,16 +182,6 @@ const EcoFiDashboard = () => {
     const cleanup = setupRealTimeRefresh();
     return cleanup;
   }, [walletConnected, provider, walletAddress, refreshInterval]);
-
-  // Toast helper functions
-  const showToast = useCallback((message, type = 'info') => {
-    const id = Date.now();
-    setToasts(prev => [...prev, { id, message, type }]);
-  }, []);
-
-  const removeToast = useCallback((id) => {
-    setToasts(prev => prev.filter(toast => toast.id !== id));
-  }, []);
 
   // Utility function to check MetaMask status
   const checkMetaMaskStatus = useCallback(() => {
