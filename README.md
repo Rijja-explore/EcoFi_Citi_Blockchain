@@ -1,8 +1,6 @@
 # EcoFi - Green Bond Dashboard
 
-A decentralized impact investing platform built on Ethereum. This application allows users to invest in green bonds and track environmental impact metrics in real-time with data persistence via Firebase.
-
-![EcoFi Platform](https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80)
+A decentralized impact investing platform built on Ethereum. This application allows users to invest in green bonds and track environmental impact metrics.
 
 ## Project Overview
 
@@ -16,25 +14,6 @@ The EcoFi platform consists of:
 2. **React Frontend**:
    - Dashboard for investors to purchase bonds and track impact
    - Issuer dashboard for project owners to manage funds and report metrics
-   - Real-time data visualization with Recharts
-   - Interactive UI with Tailwind CSS and Framer Motion
-
-3. **Firebase Integration**:
-   - Firestore database for transaction history
-   - Login timeline tracking
-   - Impact data storage and retrieval
-   - Project data management
-
-## Features
-
-- **Wallet Connection**: Seamless MetaMask integration
-- **Bond Investment**: Purchase green bonds with ETH
-- **Impact Tracking**: Real-time environmental metrics
-- **Milestone System**: Fund releases tied to impact achievements
-- **Transaction History**: Complete record of all interactions
-- **Login Timeline**: Track wallet connection history
-- **Issuer Controls**: Special functions for project owners
-- **Responsive Design**: Works on desktop and mobile devices
 
 ## Setup Instructions
 
@@ -44,15 +23,14 @@ The EcoFi platform consists of:
 - npm or yarn
 - MetaMask browser extension
 - Git
-- Firebase account (for data persistence)
 
 ### Installation
 
 1. **Clone the repository:**
 
 ```bash
-git clone https://github.com/Rijja-explore/EcoFi_Citi_Blockchain.git
-cd EcoFi_Citi_Blockchain
+git clone <repository-url>
+cd EcoFi
 ```
 
 2. **Install dependencies for the frontend:**
@@ -68,11 +46,6 @@ cd src/Backend
 npm install
 cd ../..
 ```
-
-4. **Configure Firebase** (optional, only if you want your own Firebase instance):
-   - Create a new Firebase project at [firebase.google.com](https://firebase.google.com)
-   - Enable Firestore Database
-   - Replace the firebaseConfig object in `src/firebaseConfig.js` with your own configuration
 
 ### Running the Application
 
@@ -91,13 +64,14 @@ In a new terminal:
 
 ```bash
 cd src/Backend
-npx hardhat run scripts/deployCombined.js --network localhost
+npx hardhat run scripts/deployForFrontend.js --network localhost
 ```
 
 This script will:
 - Deploy all contracts
 - Wire them together
-- Create contract information for the frontend
+- Create a `.env` file in the project root with contract addresses
+- Create a `contractInfo.json` file in the `src` directory
 
 #### Step 3: Start the React app
 
@@ -126,60 +100,30 @@ The application will be available at [http://localhost:3000](http://localhost:30
 To simulate environmental impact updates:
 
 1. Use the "Oracle Simulation" panel in the issuer dashboard
-2. Or run the oracle scripts:
-
-```bash
-cd src/Backend
-# Set up the oracle (only needed once)
-npm run oracle:setup
-
-# Fund the oracle updater (only needed once)
-npm run oracle:fund
-
-# Push a single update
-npm run oracle:once
-
-# Start a mock data feed that updates continuously
-npm run oracle:loop
-```
-
-## Firebase Integration
-
-The application uses Firebase Firestore for:
-
-1. **Transaction History**: Records all wallet interactions
-2. **Login Timeline**: Tracks wallet connections and disconnections
-3. **Impact Data**: Stores environmental impact metrics
-4. **Project Information**: Manages project details and progress
-
-Data is automatically synced between the blockchain and Firebase to ensure consistency.
+2. Enter the Oracle Updater private key, which can be found in:
+   - The `.env` file as `REACT_APP_ORACLE_UPDATER_KEY`
+   - The second account provided by Hardhat
 
 ## Development Notes
 
-### Tech Stack
-
-- **Frontend**: React, Tailwind CSS, ethers.js, Framer Motion
-- **Backend**: Solidity, Hardhat, OpenZeppelin Contracts
-- **Database**: Firebase Firestore
-- **Visualization**: Recharts
-- **Icons**: Lucide React
-
 ### Contract Deployment
 
-The deployment script (`deployCombined.js`) handles:
+The deployment script (`deployForFrontend.js`) handles:
 - Deploying all contracts
 - Setting up the relationships between contracts
-- Creating deployment information for the frontend
+- Creating a `.env` file with contract addresses
+- Creating a `contractInfo.json` file with deployment info
 
 If you modify the contracts, you'll need to:
 1. Compile: `npx hardhat compile`
-2. Deploy: `npx hardhat run scripts/deployCombined.js --network localhost`
+2. Deploy: `npx hardhat run scripts/deployForFrontend.js --network localhost`
 
 ### Frontend Contract Connection
 
 The frontend connects to the blockchain using:
 - `ethers.js` for blockchain interactions
 - `contractUtils.js` for simplified contract connection
+- Environment variables loaded from `.env`
 
 ## Troubleshooting
 
@@ -191,24 +135,10 @@ The frontend connects to the blockchain using:
 - Check console for detailed error messages
 - Ensure you're using the correct account for the operation (issuer vs. investor)
 
-### Firebase Connection Issues
-- Verify your internet connection
-- Check Firebase console for any service disruptions
-- Ensure your Firebase project is properly configured
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+### "Cannot read properties of undefined" Errors
+- Check that contract addresses in `.env` match the deployed contracts
+- Verify that contract artifacts are up to date with `npx hardhat compile`
 
 ## License
 
 [MIT License](LICENSE)
-
-## Acknowledgements
-
-- [OpenZeppelin](https://openzeppelin.com/) for secure contract libraries
-- [Hardhat](https://hardhat.org/) for Ethereum development environment
-- [Firebase](https://firebase.google.com/) for database services
-- [Tailwind CSS](https://tailwindcss.com/) for styling
-- [ethers.js](https://docs.ethers.io/) for blockchain interactions
-- [React](https://reactjs.org/) for frontend framework
