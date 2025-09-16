@@ -21,7 +21,6 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "start:full": "concurrently \"cd src/Backend && npx hardhat node\" \"cd src/Backend && npx hardhat run --network localhost scripts/deployCombined.js\" \"cd src/Backend && npm run oracle:fund\" \"cd src/Backend && npm run oracle:loop\" \"react-scripts start\"",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
