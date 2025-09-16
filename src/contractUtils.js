@@ -9,11 +9,7 @@ import ImpactOracleArtifact from './Backend/artifacts/contracts/ImpactOracle.sol
 // Environment variables (fallback to hardcoded values if needed)
 const ESCROW_ADDRESS = process.env.REACT_APP_ESCROW_ADDRESS || '0x5FbDB2315678afecb367f032d93F642f64180aa3';
 const BOND_TOKEN_ADDRESS = process.env.REACT_APP_BOND_TOKEN_ADDRESS; // Will be fetched from escrow
-<<<<<<< HEAD
-const ORACLE_ADDRESS = process.env.REACT_APP_ORACLE_ADDRESS || '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0';
-=======
 const ORACLE_ADDRESS = process.env.REACT_APP_ORACLE_ADDRESS || '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512';
->>>>>>> parent of 8e20357 (The final Upgrade)
 const UPDATER_ADDRESS = process.env.REACT_APP_UPDATER_ADDRESS || '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
 const ORACLE_UPDATER_KEY = process.env.REACT_APP_ORACLE_UPDATER_KEY || '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
 const EXPECTED_CHAIN_ID = process.env.REACT_APP_CHAIN_ID ? parseInt(process.env.REACT_APP_CHAIN_ID) : 31337;
