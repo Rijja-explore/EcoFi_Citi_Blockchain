@@ -2,13 +2,13 @@
 import { ethers } from 'ethers';
 
 // Import ABIs from artifacts
-import GreenBondEscrowArtifact from './Backend/artifacts/contracts/GreenBondEscrow.sol/GreenBondEscrow.json';
-import BondTokenArtifact from './Backend/artifacts/contracts/BondToken.sol/BondToken.json';
-import ImpactOracleArtifact from './Backend/artifacts/contracts/ImpactOracle.sol/ImpactOracle.json';
+import GreenBondEscrowArtifact from './artifacts/contracts/GreenBondEscrow.sol/GreenBondEscrow.json';
+import BondTokenArtifact from './artifacts/contracts/BondToken.sol/BondToken.json';
+import ImpactOracleArtifact from './artifacts/contracts/ImpactOracle.sol/ImpactOracle.json';
 
 // Environment variables (fallback to hardcoded values if needed)
 const ESCROW_ADDRESS = process.env.REACT_APP_ESCROW_ADDRESS || '0x5FbDB2315678afecb367f032d93F642f64180aa3';
-const BOND_TOKEN_ADDRESS = process.env.REACT_APP_BOND_TOKEN_ADDRESS; // Will be fetched from escrow
+const BOND_TOKEN_ADDRESS = process.env.REACT_APP_BOND_TOKEN_ADDRESS || '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512';
 const ORACLE_ADDRESS = process.env.REACT_APP_ORACLE_ADDRESS || '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512';
 const UPDATER_ADDRESS = process.env.REACT_APP_UPDATER_ADDRESS || '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
 const ORACLE_UPDATER_KEY = process.env.REACT_APP_ORACLE_UPDATER_KEY || '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
@@ -68,12 +68,8 @@ export async function getSigner(provider) {
       throw new Error('Provider is not initialized');
     }
     
-    // Request accounts access using window.ethereum directly
-    if (!window.ethereum) {
-      throw new Error('MetaMask is not installed');
-    }
-    
-    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    // Request accounts access (this will prompt the user if not already connected)
+    const accounts = await provider.send('eth_requestAccounts', []);
     
     if (!accounts || accounts.length === 0) {
       throw new Error('No accounts found. Please check MetaMask and try again.');
@@ -107,21 +103,10 @@ export async function getSigner(provider) {
  */
 export function getContracts(signerOrProvider) {
   try {
-    // Create escrow contract first
-    const escrow = new ethers.Contract(ESCROW_ADDRESS, GreenBondEscrowArtifact.abi, signerOrProvider);
-    
-    // Create oracle contract
-    const oracle = new ethers.Contract(ORACLE_ADDRESS, ImpactOracleArtifact.abi, signerOrProvider);
-    
-    // For bond token, we need to use an async function in the component to get the address
-    // But for now, use a placeholder that will be updated after fetching the token address
-    const bondTokenAddress = BOND_TOKEN_ADDRESS || ESCROW_ADDRESS; // Temporary placeholder
-    const bondToken = new ethers.Contract(bondTokenAddress, BondTokenArtifact.abi, signerOrProvider);
-    
     return {
-      escrow,
-      bondToken,
-      oracle
+      escrow: new ethers.Contract(ESCROW_ADDRESS, GreenBondEscrowArtifact.abi, signerOrProvider),
+      bondToken: new ethers.Contract(BOND_TOKEN_ADDRESS, BondTokenArtifact.abi, signerOrProvider),
+      oracle: new ethers.Contract(ORACLE_ADDRESS, ImpactOracleArtifact.abi, signerOrProvider)
     };
   } catch (error) {
     console.error('Contract initialization failed:', error);

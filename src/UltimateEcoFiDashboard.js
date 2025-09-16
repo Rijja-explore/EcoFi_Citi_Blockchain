@@ -9,6 +9,9 @@ import {
   Boxes, Activity, CreditCard, Waves
 } from 'lucide-react';
 
+// Import enhanced particle background
+import EnhancedParticleBackground from './EnhancedParticleBackground';
+
 // Import contract utilities
 import { 
   initializeProvider, 
@@ -47,151 +50,6 @@ const Toast = ({ message, type, onClose }) => {
       {getIcon()}
       <span className="font-inter">{message}</span>
     </div>
-  );
-};
-
-// Enhanced Particle Background Component
-const EnhancedParticleBackground = () => {
-  const canvasRef = useCallback((canvas) => {
-    if (!canvas) return;
-    
-    const ctx = canvas.getContext('2d');
-    let animationFrameId;
-    let particles = [];
-    
-    // Resize canvas
-    const resizeCanvas = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    };
-    
-    // Initialize particles
-    const initParticles = () => {
-      particles = [];
-      const numParticles = Math.min(150, Math.floor((canvas.width * canvas.height) / 8000));
-      
-      for (let i = 0; i < numParticles; i++) {
-        particles.push({
-          x: Math.random() * canvas.width,
-          y: Math.random() * canvas.height,
-          vx: (Math.random() - 0.5) * 2,
-          vy: (Math.random() - 0.5) * 2,
-          size: Math.random() * 4 + 1,
-          opacity: Math.random() * 0.5 + 0.1,
-          color: Math.random() > 0.5 ? '#10b981' : '#3b82f6',
-          pulse: Math.random() * Math.PI * 2,
-          growth: 0
-        });
-      }
-    };
-    
-    // Mouse interaction
-    let mouse = { x: 0, y: 0 };
-    const handleMouseMove = (e) => {
-      const rect = canvas.getBoundingClientRect();
-      mouse.x = e.clientX - rect.left;
-      mouse.y = e.clientY - rect.top;
-    };
-    
-    // Animation loop
-    const animate = () => {
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.1)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      
-      particles.forEach((particle, index) => {
-        // Mouse repulsion
-        const dx = mouse.x - particle.x;
-        const dy = mouse.y - particle.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        if (distance < 100) {
-          const force = (100 - distance) / 100;
-          particle.vx -= (dx / distance) * force * 0.5;
-          particle.vy -= (dy / distance) * force * 0.5;
-          particle.growth = Math.min(particle.growth + 0.1, 2);
-        } else {
-          particle.growth = Math.max(particle.growth - 0.05, 0);
-        }
-        
-        // Update position
-        particle.x += particle.vx;
-        particle.y += particle.vy;
-        
-        // Wrap around edges
-        if (particle.x < 0) particle.x = canvas.width;
-        if (particle.x > canvas.width) particle.x = 0;
-        if (particle.y < 0) particle.y = canvas.height;
-        if (particle.y > canvas.height) particle.y = 0;
-        
-        // Update pulse
-        particle.pulse += 0.02;
-        const pulseSize = Math.sin(particle.pulse) * 0.5 + 1;
-        const currentSize = (particle.size + particle.growth) * pulseSize;
-        
-        // Draw particle with gradient
-        const gradient = ctx.createRadialGradient(
-          particle.x, particle.y, 0,
-          particle.x, particle.y, currentSize * 2
-        );
-        gradient.addColorStop(0, particle.color + Math.floor(particle.opacity * 255).toString(16).padStart(2, '0'));
-        gradient.addColorStop(1, particle.color + '00');
-        
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(particle.x, particle.y, currentSize, 0, Math.PI * 2);
-        ctx.fill();
-        
-        // Draw connections
-        particles.slice(index + 1).forEach(otherParticle => {
-          const dx = particle.x - otherParticle.x;
-          const dy = particle.y - otherParticle.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-          
-          if (distance < 120) {
-            const opacity = (120 - distance) / 120 * 0.3;
-            ctx.strokeStyle = `rgba(59, 130, 246, ${opacity})`;
-            ctx.lineWidth = 0.5;
-            ctx.beginPath();
-            ctx.moveTo(particle.x, particle.y);
-            ctx.lineTo(otherParticle.x, otherParticle.y);
-            ctx.stroke();
-          }
-        });
-      });
-      
-      animationFrameId = requestAnimationFrame(animate);
-    };
-    
-    // Setup
-    resizeCanvas();
-    initParticles();
-    
-    // Event listeners
-    window.addEventListener('resize', () => {
-      resizeCanvas();
-      initParticles();
-    });
-    canvas.addEventListener('mousemove', handleMouseMove);
-    
-    // Start animation
-    animate();
-    
-    // Cleanup
-    return () => {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-      }
-      window.removeEventListener('resize', resizeCanvas);
-      canvas.removeEventListener('mousemove', handleMouseMove);
-    };
-  }, []);
-  
-  return (
-    <canvas
-      ref={canvasRef}
-      className="fixed inset-0 pointer-events-none z-0"
-      style={{ background: 'transparent' }}
-    />
   );
 };
 
@@ -488,18 +346,14 @@ const UltimateEcoFiDashboard = () => {
   // Connect wallet
   const connectWallet = async () => {
     try {
-      if (!window.ethereum) {
-        showToast('MetaMask is not installed. Please install MetaMask to continue.', 'error');
-        return;
-      }
-
       setLoadingData(true);
-      const { provider: initProvider, isHardhatLocal } = await initializeProvider();
+      const initProvider = await initializeProvider();
       setProvider(initProvider);
       
-      const { signer: sig, address } = await getSigner(initProvider);
+      const sig = await getSigner(initProvider);
       setSigner(sig);
       
+      const address = await sig.getAddress();
       setWalletAddress(address);
       setWalletConnected(true);
       
@@ -522,17 +376,7 @@ const UltimateEcoFiDashboard = () => {
       showToast('Wallet connected successfully!', 'success');
     } catch (error) {
       console.error('Error connecting wallet:', error);
-      let errorMessage = 'Failed to connect wallet. ';
-      
-      if (error.message.includes('user rejected')) {
-        errorMessage += 'Connection was cancelled by user.';
-      } else if (error.message.includes('already pending')) {
-        errorMessage += 'Connection request is already pending. Please check MetaMask.';
-      } else {
-        errorMessage += error.message;
-      }
-      
-      showToast(errorMessage, 'error');
+      showToast('Failed to connect wallet. ' + error.message, 'error');
     } finally {
       setLoadingData(false);
     }
@@ -734,9 +578,8 @@ const UltimateEcoFiDashboard = () => {
     };
     escrow.on(milestoneFilter, milestoneListener);
     
-    // In ethers v6, use the event name as defined in the contract
-    const impactFilter = oracle.filters.ImpactUpdated();
-    const impactListener = (deltaKwh, deltaCO2, cumulativeKwh, cumulativeCO2, event) => {
+    const impactFilter = oracle.filters.ImpactUpdate();
+    const impactListener = (cumulativeKwh, deltaCO2, event) => {
       showToast(`New impact data: +${deltaCO2} kg CO₂ offset`, 'info');
       loadContractData(contracts, walletAddress);
     };
@@ -1063,7 +906,7 @@ const UltimateEcoFiDashboard = () => {
               <div className="bg-gradient-to-r from-green-500 to-blue-500 p-2 rounded-lg mr-3">
                 <Leaf className="h-6 w-6 text-white" />
               </div>
-              <h1 className="text-2xl font-montserrat font-bold text-white" style={{textShadow: '0 2px 4px rgba(0,0,0,0.8)'}}>EcoFi <span className="text-green-400">Green Bonds</span></h1>
+              <h1 className="text-2xl font-montserrat font-bold text-white">EcoFi <span className="text-green-400">Green Bonds</span></h1>
             </div>
             
             <div className="flex flex-col md:flex-row md:items-center space-y-3 md:space-y-0 md:space-x-4 w-full md:w-auto">
@@ -1105,7 +948,7 @@ const UltimateEcoFiDashboard = () => {
       </header>
       
       {/* Main Content */}
-      <main className="relative z-10 container mx-auto px-4 py-8">
+      <main className="container mx-auto px-4 py-8">
         {hardhatRunning === false && (
           <div className="mb-8 bg-red-500/20 border border-red-500/30 rounded-lg p-4">
             <div className="flex items-start">
@@ -1169,10 +1012,10 @@ const UltimateEcoFiDashboard = () => {
                   <Leaf className="h-12 w-12 text-white" />
                 </div>
               </div>
-              <h2 className="text-3xl font-montserrat font-bold text-white mb-4" style={{textShadow: '0 2px 8px rgba(0,0,0,0.8)'}}>
+              <h2 className="text-3xl font-montserrat font-bold text-white mb-4">
                 Welcome to EcoFi Green Bonds
               </h2>
-              <p className="text-white/70 font-inter max-w-xl mx-auto" style={{textShadow: '0 1px 4px rgba(0,0,0,0.6)'}}>
+              <p className="text-white/70 font-inter max-w-xl mx-auto">
                 Invest in sustainable energy projects with transparency and impact tracking.
                 Connect your wallet to get started.
               </p>
