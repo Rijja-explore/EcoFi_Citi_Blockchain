@@ -4,11 +4,14 @@ import {
   Wallet, CheckCircle, AlertTriangle, RefreshCw, Lock, 
   Award, Flame, BarChart3, Leaf, Globe, 
   Zap, DollarSign, TrendingUp, Database,
-  CheckCircle2, Sparkles, Wind, Lightbulb, LogOut
+  CheckCircle2, Sparkles, Wind, Lightbulb, LogOut, PlusCircle, Clock
 } from 'lucide-react';
 
 // Import enhanced particle background
 import EnhancedParticleBackground from './EnhancedParticleBackground';
+
+// Import login timeline
+import LoginTimeline from './LoginTimeline';
 
 // Import contract utilities and artifacts
 import { 
@@ -21,6 +24,15 @@ import {
   pushImpactData
 } from './contractUtils';
 import BondTokenArtifact from './Backend/artifacts/contracts/BondToken.sol/BondToken.json';
+
+// Import Firebase config and functions
+import { 
+  addTransaction, getTransactionsForWallet, 
+  addProject, getProjects, 
+  getLatestImpactData, addImpactData,
+  logUserLogin, logUserLogout, getWalletLoginTimeline,
+  db
+} from './firebaseConfig';
 
 // Toast notification component
 const Toast = ({ message, type, onClose }) => {
@@ -46,6 +58,22 @@ const EcoFiDashboard = () => {
   const [signer, setSigner] = useState(null);
   const [wrongNetwork, setWrongNetwork] = useState(false);
   const [hardhatRunning, setHardhatRunning] = useState(null);
+  
+  // Load impact data from Firestore
+  useEffect(() => {
+    const fetchImpactData = async () => {
+      try {
+        const data = await getLatestImpactData();
+        if (data) {
+          setEnvironmentalImpact(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch impact data:", error);
+      }
+    };
+    
+    fetchImpactData();
+  }, []);
   
   // State for contract data
   const [bondBalance, setBondBalance] = useState('0');
@@ -75,6 +103,7 @@ const EcoFiDashboard = () => {
   const [loading, setLoading] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [toasts, setToasts] = useState([]);
+  const [loadingTransactions, setLoadingTransactions] = useState(false);
 
   // Environmental impact metrics (calculated from contract data)
   const [environmentalImpact, setEnvironmentalImpact] = useState({
@@ -94,34 +123,59 @@ const EcoFiDashboard = () => {
     setToasts(prev => prev.filter(toast => toast.id !== id));
   }, []);
 
-  // Disconnect wallet function
-  const disconnectWallet = useCallback(() => {
-    // Clear connection state
-    setWalletConnected(false);
-    setWalletAddress('');
-    setProvider(null);
-    setSigner(null);
+  // Function to fetch transaction history from database
+  const fetchTransactionHistory = useCallback(async () => {
+    if (!walletAddress) return;
     
-    // Clear contract data
-    setBondBalance('0');
-    setImpactScore(0);
-    setTotalRaised('0');
-    setTotalReleased('0');
-    setTokenPrice('0');
-    setTokensSold('0');
-    setCapTokens('0');
-    setCumulativeKwh(0);
-    setIsIssuer(false);
-    setMilestones([]);
-    
-    // Stop refresh interval
-    if (refreshInterval) {
-      clearInterval(refreshInterval);
-      setRefreshInterval(null);
+    try {
+      setLoadingTransactions(true);
+      const transactions = await getTransactionsForWallet(walletAddress);
+      setTransactionHistory(transactions);
+    } catch (error) {
+      console.error('Error fetching transaction history:', error);
+      showToast('Failed to load transaction history', 'error');
+    } finally {
+      setLoadingTransactions(false);
     }
-    
-    // Show success message
-    showToast('Wallet disconnected successfully', 'success');
+  }, [walletAddress, showToast]);
+
+  // Disconnect wallet function
+  const disconnectWallet = useCallback(async () => {
+    try {
+      // Log the logout event if wallet is connected
+      if (walletConnected && walletAddress) {
+        await logUserLogout(walletAddress);
+      }
+      
+      // Clear connection state
+      setWalletConnected(false);
+      setWalletAddress('');
+      setProvider(null);
+      setSigner(null);
+      
+      // Clear contract data
+      setBondBalance('0');
+      setImpactScore(0);
+      setTotalRaised('0');
+      setTotalReleased('0');
+      setTokenPrice('0');
+      setTokensSold('0');
+      setCapTokens('0');
+      setCumulativeKwh(0);
+      setIsIssuer(false);
+      setMilestones([]);
+      
+      // Stop refresh interval
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+        setRefreshInterval(null);
+      }
+      
+      // Show success message
+      showToast('Wallet disconnected successfully', 'success');
+    } catch (error) {
+      console.error('Error logging disconnect event:', error);
+    }
     setProvider(null);
     setSigner(null);
     
@@ -144,14 +198,23 @@ const EcoFiDashboard = () => {
     setMilestones([]);
     setSaleEnd(0);
     
-    setTransactionHistory(prev => [...prev, { 
+    // Add disconnect transaction to database
+    addTransaction({ 
       type: 'Wallet Disconnected', 
       status: 'Success', 
-      time: new Date().toLocaleTimeString() 
-    }]);
+      time: new Date().toLocaleTimeString(),
+      walletAddress: walletAddress
+    });
     
     showToast('Wallet disconnected', 'info');
   }, [refreshInterval, showToast]);
+
+  // Load transaction history when wallet is connected
+  useEffect(() => {
+    if (walletConnected && walletAddress) {
+      fetchTransactionHistory();
+    }
+  }, [walletConnected, walletAddress, fetchTransactionHistory]);
 
   // Set up real-time data refresh
   useEffect(() => {
@@ -237,22 +300,33 @@ const EcoFiDashboard = () => {
       setWalletConnected(true);
       setWrongNetwork(false);
       
-      setTransactionHistory(prev => [...prev, { 
+      // Log the login event
+      await logUserLogin(address);
+      
+      // Add connection to database
+      await addTransaction({ 
         type: 'Wallet Connected', 
         status: 'Success', 
-        time: new Date().toLocaleTimeString() 
-      }]);
+        time: new Date().toLocaleTimeString(),
+        walletAddress: address
+      });
+      
       showToast('Wallet connected successfully', 'success');
       
       // Fetch contract data after connecting
       fetchContractData(ethersProvider, address);
     } catch (error) {
       console.error('Wallet connection failed:', error);
-      setTransactionHistory(prev => [...prev, { 
+      
+      // Log error to database
+      await addTransaction({ 
         type: 'Wallet Connect', 
         status: 'Failed', 
-        time: new Date().toLocaleTimeString() 
-      }]);
+        time: new Date().toLocaleTimeString(),
+        walletAddress: 'unknown',
+        error: error.message || 'Unknown error'
+      });
+      
       showToast(error.message || 'Failed to connect wallet', 'error');
     } finally {
       setLoading(false);
@@ -360,15 +434,31 @@ const EcoFiDashboard = () => {
         console.error("Failed to fetch saleEnd:", error);
       }
       
-      // Calculate environmental impact metrics based on kWh
+      // Calculate environmental impact metrics based on kWh and store in Firestore
       try {
-        const kwhValue = cumulativeKwh; // Use state variable
-        setEnvironmentalImpact({
+        // First try to get latest impact data from Firestore
+        const existingImpact = await getLatestImpactData();
+        
+        // Calculate new impact data based on current kWh
+        const kwhValue = cumulativeKwh; 
+        const impactData = {
           co2Reduced: Math.round(kwhValue * 0.4), // kg CO2 saved (0.4kg per kWh)
           treesPlanted: Math.round(kwhValue * 0.02), // trees equivalent (1 tree = ~50 kWh)
           energySaved: kwhValue, // kWh saved
           waterConserved: Math.round(kwhValue * 0.5) // liters of water conserved
-        });
+        };
+        
+        // Only update Firestore if there's a change
+        if (!existingImpact || 
+            existingImpact.co2Reduced !== impactData.co2Reduced ||
+            existingImpact.energySaved !== impactData.energySaved) {
+          
+          // Update state
+          setEnvironmentalImpact(impactData);
+          
+          // Store in Firestore
+          await addImpactData(impactData);
+        }
       } catch (error) {
         console.error("Failed to calculate environmental impact:", error);
       }
@@ -480,26 +570,29 @@ const EcoFiDashboard = () => {
         throw new Error('Failed to push impact data');
       }
       
-      setTransactionHistory(prev => [...prev, { 
+      // Add transaction to database
+      await addTransaction({ 
         type: 'Push Impact Data', 
         status: 'Pending', 
-        time: new Date().toLocaleTimeString(), 
+        time: new Date().toLocaleTimeString(),
+        walletAddress: walletAddress,
         txHash: tx.hash 
-      }]);
+      });
       
       showToast('Impact data transaction pending...', 'info');
       
       // Wait for confirmation
       await tx.wait();
       
-      // Update transaction history
-      setTransactionHistory(prev => 
-        prev.map(item => 
-          item.txHash === tx.hash 
-            ? { ...item, status: 'Success' } 
-            : item
-        )
-      );
+      // Update transaction in database with success status
+      await addTransaction({
+        type: 'Push Impact Data',
+        status: 'Success',
+        time: new Date().toLocaleTimeString(),
+        walletAddress: walletAddress,
+        txHash: tx.hash,
+        updatedTx: true
+      });
       
       showToast('Impact data updated successfully', 'success');
       
@@ -509,11 +602,15 @@ const EcoFiDashboard = () => {
       fetchContractData(provider, walletAddress);
     } catch (error) {
       console.error('Push impact data failed:', error);
-      setTransactionHistory(prev => [...prev, { 
+      
+      // Log error to database
+      await addTransaction({ 
         type: 'Push Impact Data', 
         status: 'Failed', 
-        time: new Date().toLocaleTimeString() 
-      }]);
+        time: new Date().toLocaleTimeString(),
+        walletAddress: walletAddress,
+        error: error.message || 'Unknown error'
+      });
       showToast(handleContractError(error), 'error');
     } finally {
       setLoading(false);
@@ -891,14 +988,28 @@ const EcoFiDashboard = () => {
   // Transaction History Component
   const TransactionHistoryComponent = () => (
     <div className="glass-card p-4 rounded-xl">
-      <h3 className="text-white text-lg font-semibold mb-3">Transaction History</h3>
+      <h3 className="text-white text-lg font-semibold mb-3">
+        Transaction History
+        <button 
+          onClick={fetchTransactionHistory}
+          className="ml-2 bg-gray-700/50 hover:bg-gray-700 rounded-full p-1 transition-colors"
+          title="Refresh Transaction History"
+        >
+          <RefreshCw className={`w-3 h-3 ${loadingTransactions ? 'animate-spin' : ''}`} />
+        </button>
+      </h3>
       
-      {transactionHistory.length === 0 ? (
+      {loadingTransactions ? (
+        <div className="text-gray-400 text-center py-4 flex items-center justify-center">
+          <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+          Loading transactions...
+        </div>
+      ) : transactionHistory.length === 0 ? (
         <div className="text-gray-400 text-center py-4">No transactions yet</div>
       ) : (
         <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
           {transactionHistory.map((tx, index) => (
-            <div key={index} className="flex items-center justify-between bg-gray-800/50 p-2 rounded-lg">
+            <div key={tx.id || index} className="flex items-center justify-between bg-gray-800/50 p-2 rounded-lg">
               <div className="flex items-center gap-2">
                 <div className={`w-2 h-2 rounded-full ${
                   tx.status === 'Success' ? 'bg-green-500' : 
@@ -929,6 +1040,8 @@ const EcoFiDashboard = () => {
       )}
     </div>
   );
+
+  // Investment Modal
 
   // Investment Modal
   const InvestModal = () => (
@@ -990,30 +1103,75 @@ const EcoFiDashboard = () => {
     </div>
   );
 
-  // Sample project data
-  // Instead of hardcoded projects, use real contract data
-  const getProjectData = useCallback(() => {
-    // Generate project data based on contract state
-    return [
-      {
-        id: 1,
+  // Function to add a new project to Firestore
+  const addSampleProject = async () => {
+    try {
+      // Get latest impact data
+      const latestImpactData = await getLatestImpactData();
+      
+      // Create project with dynamic data
+      await addProject({
         name: "Green Bond Project",
         image: "https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80",
         location: "Global",
         description: "Tokenized green bonds funding renewable energy and sustainable development projects.",
-        impact: `${environmentalImpact.co2Reduced.toLocaleString()} kg CO₂ reduction`,
-        progress: impactScore
-      }
-    ];
-  }, [environmentalImpact.co2Reduced, impactScore]);
+        impact: `${latestImpactData.co2Reduced.toLocaleString()} kg CO₂ reduction`,
+        progress: impactScore,
+        createdAt: new Date()
+      });
+      showToast("Project added successfully", "success");
+    } catch (error) {
+      showToast("Failed to add project: " + error.message, "error");
+    }
+  };
 
   // Projects component
   const Projects = () => {
-    const projectsData = getProjectData();
+    const [projects, setProjects] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    
+    // Fetch projects from Firestore
+    useEffect(() => {
+      const fetchProjects = async () => {
+        try {
+          setLoading(true);
+          const projectsData = await getProjects();
+          
+          // Set projects from Firestore data
+          setProjects(projectsData);
+          
+          // No more hardcoded fallback data
+          setLoading(false);
+        } catch (err) {
+          console.error("Error fetching projects:", err);
+          setError("Failed to load projects");
+          setLoading(false);
+        }
+      };
+      
+      fetchProjects();
+    }, []);
+    
+    if (loading) {
+      return (
+        <div className="flex justify-center items-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500"></div>
+        </div>
+      );
+    }
+    
+    if (error) {
+      return (
+        <div className="text-red-500 text-center p-4">
+          {error}
+        </div>
+      );
+    }
     
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {projectsData.map(project => (
+        {projects.map(project => (
           <div key={project.id} className="glass-card p-6 rounded-2xl hover:shadow-xl hover:shadow-purple-500/10 transition-all duration-300">
             <div 
               className="h-40 rounded-xl mb-4 bg-cover bg-center" 
@@ -1045,6 +1203,17 @@ const EcoFiDashboard = () => {
             </div>
           </div>
         ))}
+        
+        {/* Add Project Button (only for admins in a real app) */}
+        {isIssuer && (
+          <div 
+            onClick={addSampleProject}
+            className="glass-card p-6 rounded-2xl flex flex-col justify-center items-center cursor-pointer hover:shadow-xl hover:shadow-purple-500/10 transition-all duration-300 border-2 border-dashed border-gray-700"
+          >
+            <PlusCircle className="w-12 h-12 mb-4 text-gray-400" />
+            <p className="text-gray-400">Add New Project</p>
+          </div>
+        )}
       </div>
     );
   };
@@ -1054,7 +1223,8 @@ const EcoFiDashboard = () => {
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
     { id: 'projects', label: 'Projects', icon: Globe },
     { id: 'impact', label: 'Impact', icon: Leaf },
-    { id: 'transactions', label: 'Transactions', icon: Database }
+    { id: 'transactions', label: 'Transactions', icon: Database },
+    { id: 'timeline', label: 'Login Timeline', icon: Clock }
   ];
 
   // Conditionally add issuer tab
@@ -1251,8 +1421,28 @@ const EcoFiDashboard = () => {
             {/* Transactions tab */}
             {activeTab === 'transactions' && (
               <div className="space-y-6">
-                <h2 className="text-2xl font-bold text-white mb-4">Transaction History</h2>
+                <div className="flex justify-between items-center">
+                  <h2 className="text-2xl font-bold text-white mb-4">Transaction History</h2>
+                </div>
+                
+                {/* Transaction History */}
                 <TransactionHistoryComponent />
+              </div>
+            )}
+            
+            {/* Login Timeline tab */}
+            {activeTab === 'timeline' && (
+              <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-2xl font-bold text-white mb-4">Login Timeline</h2>
+                </div>
+                
+                <div className="glass-card p-6 rounded-2xl">
+                  <p className="text-gray-300 mb-6">
+                    Track when your wallet connects and disconnects from the platform. This timeline shows your historical login activity.
+                  </p>
+                  <LoginTimeline walletAddress={walletAddress} />
+                </div>
               </div>
             )}
             
