@@ -14,12 +14,14 @@ import EnhancedParticleBackground from './EnhancedParticleBackground';
 import { 
   initializeProvider, 
   getSigner, 
-  getContracts,
   handleContractError,
   verifyHardhatRunning,
   addHardhatNetworkToMetaMask,
-  pushImpactData
-} from './contractUtils';
+  getContracts
+} from './contractUtilsEnhanced';
+
+// Import RealTimeDataContext
+import { useRealTimeData } from './RealTimeDataProvider';
 import BondTokenArtifact from './Backend/artifacts/contracts/BondToken.sol/BondToken.json';
 
 // Toast notification component
@@ -39,31 +41,47 @@ const Toast = ({ message, type, onClose }) => {
 };
 
 const EcoFiDashboard = () => {
-  // State for wallet connection
+  // Get data from our context
+  const { 
+    loading: dataLoading, 
+    error: dataError, 
+    contractData, 
+    refreshData, 
+    buyBonds: contextBuyBonds, 
+    submitImpactData 
+  } = useRealTimeData();
+
+  // State for wallet and network
   const [walletConnected, setWalletConnected] = useState(false);
   const [walletAddress, setWalletAddress] = useState('');
   const [provider, setProvider] = useState(null);
   const [signer, setSigner] = useState(null);
   const [wrongNetwork, setWrongNetwork] = useState(false);
   const [hardhatRunning, setHardhatRunning] = useState(null);
-  
-  // State for contract data
-  const [bondBalance, setBondBalance] = useState('0');
-  const [impactScore, setImpactScore] = useState(0);
-  const [totalRaised, setTotalRaised] = useState('0');
-  const [totalReleased, setTotalReleased] = useState('0');
-  const [tokenPrice, setTokenPrice] = useState('0');
-  const [tokensSold, setTokensSold] = useState('0');
-  const [capTokens, setCapTokens] = useState('0');
-  const [cumulativeKwh, setCumulativeKwh] = useState(0);
-  const [isIssuer, setIsIssuer] = useState(false);
-  const [milestones, setMilestones] = useState([]);
-  const [saleEnd, setSaleEnd] = useState(0);
 
-  // State for impact data entry
+  // State for impact data submission
   const [deltaKwh, setDeltaKwh] = useState('');
   const [deltaCO2, setDeltaCO2] = useState('');
   const [oracleKey, setOracleKey] = useState('');
+
+  // State for contract data
+  const [tokenPrice, setTokenPrice] = useState('0');
+  const [bondBalance, setBondBalance] = useState('0');
+  const [tokensSold, setTokensSold] = useState('0');
+  const [capTokens, setCapTokens] = useState('0');
+  const [isIssuer, setIsIssuer] = useState(false);
+  const [cumulativeKwh, setCumulativeKwh] = useState('0');
+  const [impactScore, setImpactScore] = useState(0);
+  const [saleEnd, setSaleEnd] = useState(0);
+  const [environmentalImpact, setEnvironmentalImpact] = useState({
+    co2Reduced: 0,
+    energyGenerated: 0,
+    trees: 0,
+    plasticRecycled: 0
+  });
+  const [milestones, setMilestones] = useState([]);
+  const [totalRaised, setTotalRaised] = useState('0');
+  const [totalReleased, setTotalReleased] = useState('0');
 
   // State for UI
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -73,10 +91,7 @@ const EcoFiDashboard = () => {
   const [loading, setLoading] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [toasts, setToasts] = useState([]);
-
-  // Environmental impact metrics (calculated from contract data)
-  const [environmentalImpact, setEnvironmentalImpact] = useState({
-    co2Reduced: 0,
+  const [impactMetrics, setImpactMetrics] = useState({
     treesPlanted: 0,
     energySaved: 0,
     waterConserved: 0
@@ -84,289 +99,233 @@ const EcoFiDashboard = () => {
 
   // Check if Hardhat is running when component mounts
   useEffect(() => {
-    async function checkHardhatStatus() {
-      const status = await verifyHardhatRunning();
-      setHardhatRunning(status.running);
-      
-      if (!status.running) {
-        console.error('Hardhat node is not running:', status.error);
-      }
-    }
-    
-    checkHardhatStatus();
+    const checkHardhatRunning = async () => {
+      const running = await verifyHardhatRunning();
+      setHardhatRunning(running);
+    };
+
+    checkHardhatRunning();
   }, []);
 
-  // Toast helper functions
-  const showToast = useCallback((message, type = 'info') => {
+  // Update local state from context data
+  useEffect(() => {
+    if (contractData) {
+      setTokenPrice(contractData.tokenPrice || '0');
+      setBondBalance(contractData.bondBalance || '0');
+      setTokensSold(contractData.tokensSold || '0');
+      setCapTokens(contractData.capTokens || '0');
+      setIsIssuer(contractData.isIssuer || false);
+      setCumulativeKwh(contractData.cumulativeKwh || '0');
+      setImpactScore(contractData.impactScore || 0);
+      setSaleEnd(contractData.saleEnd || 0);
+      
+      // Update environmental impact
+      setEnvironmentalImpact({
+        co2Reduced: contractData.co2Reduced || 0,
+        energyGenerated: contractData.energyGenerated || 0,
+        trees: contractData.trees || 0,
+        plasticRecycled: contractData.plasticRecycled || 0
+      });
+      
+      // Update milestones
+      if (contractData.milestones && contractData.milestones.length > 0) {
+        setMilestones(contractData.milestones);
+      }
+      
+      // Update escrow data
+      if (contractData.escrowData) {
+        setTotalRaised(contractData.escrowData.totalRaised || '0');
+        setTotalReleased(contractData.escrowData.totalReleased || '0');
+      }
+
+      // Calculate impact metrics based on the blockchain data
+      const trees = parseFloat(contractData.cumulativeKwh) * 0.012;
+      const energy = parseFloat(contractData.cumulativeKwh);
+      const water = parseFloat(contractData.cumulativeKwh) * 2.3;
+      
+      setImpactMetrics({
+        treesPlanted: Math.round(trees),
+        energySaved: energy.toFixed(2),
+        waterConserved: Math.round(water)
+      });
+    }
+  }, [contractData]);
+
+  // Show a toast notification
+  const showToast = (message, type = 'info') => {
     const id = Date.now();
-    setToasts(prev => [...prev, { id, message, type }]);
-  }, []);
+    setToasts([...toasts, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(currentToasts => currentToasts.filter(toast => toast.id !== id));
+    }, 3000);
+  };
 
-  const removeToast = useCallback((id) => {
-    setToasts(prev => prev.filter(toast => toast.id !== id));
-  }, []);
-
-  // Utility function to check MetaMask status
-  const checkMetaMaskStatus = useCallback(() => {
-    if (!window.ethereum) {
-      showToast('MetaMask is not installed. Please install MetaMask extension.', 'error');
-      return false;
-    }
-    return true;
-  }, [showToast]);
-
-  // Function to connect wallet
+  // Connect wallet
   const connectWallet = async () => {
-    if (connecting) return;
-    setConnecting(true);
-    setLoading(true);
-    
     try {
-      // Check MetaMask status
-      if (!checkMetaMaskStatus()) {
+      setConnecting(true);
+      
+      // First check if Hardhat node is running
+      const running = await verifyHardhatRunning();
+      setHardhatRunning(running);
+      
+      if (!running) {
+        showToast('Hardhat node is not running. Please start it first.', 'error');
         setConnecting(false);
-        setLoading(false);
         return;
       }
       
-      // Initialize provider and check network
-      const { provider: ethersProvider, isHardhatLocal } = await initializeProvider();
+      // Initialize provider
+      const { provider: ethProvider, chainId } = await initializeProvider();
+      setProvider(ethProvider);
       
-      if (!isHardhatLocal) {
+      // Check if we're on Hardhat network
+      if (chainId !== 31337) {
         setWrongNetwork(true);
-        showToast('Connected to wrong network. Please switch to Hardhat local network.', 'error');
-        
-        // Add Hardhat network to MetaMask if not already present
-        const networkAdded = await addHardhatNetworkToMetaMask();
-        if (networkAdded) {
-          showToast('Hardhat network added to MetaMask. Please switch networks.', 'info');
-        }
-        
         setConnecting(false);
-        setLoading(false);
+        showToast('Please connect to Hardhat network', 'error');
         return;
       }
       
-      // Get signer and address with additional validation
-      const { signer, address } = await getSigner(ethersProvider);
-      
-      if (!signer || !address) {
-        throw new Error('Failed to get signer or address');
-      }
-      
-      setProvider(ethersProvider);
-      setSigner(signer);
-      setWalletAddress(address);
-      setWalletConnected(true);
       setWrongNetwork(false);
       
-      setTransactionHistory(prev => [...prev, { 
-        type: 'Wallet Connected', 
-        status: 'Success', 
-        time: new Date().toLocaleTimeString() 
-      }]);
-      showToast('Wallet connected successfully', 'success');
+      // Get signer and address
+      const ethSigner = await getSigner(ethProvider);
+      setSigner(ethSigner);
       
-      // Fetch contract data after connecting
-      fetchContractData(ethersProvider, address);
+      if (ethSigner) {
+        const address = await ethSigner.getAddress();
+        setWalletAddress(address);
+        setWalletConnected(true);
+        showToast('Wallet connected successfully!', 'success');
+        
+        // Refresh data now that we're connected
+        if (refreshData) {
+          refreshData(ethSigner);
+        }
+      }
     } catch (error) {
-      console.error('Wallet connection failed:', error);
-      setTransactionHistory(prev => [...prev, { 
-        type: 'Wallet Connect', 
-        status: 'Failed', 
-        time: new Date().toLocaleTimeString() 
-      }]);
-      showToast(error.message || 'Failed to connect wallet', 'error');
+      console.error("Connection error:", error);
+      showToast(handleContractError(error), 'error');
     } finally {
-      setLoading(false);
       setConnecting(false);
     }
   };
 
-  // Fetch contract data
-  const fetchContractData = async (providerInstance, address) => {
-    if (!providerInstance) return;
-    
+  // Disconnect wallet
+  const disconnectWallet = () => {
+    setWalletConnected(false);
+    setWalletAddress('');
+    setSigner(null);
+    showToast('Wallet disconnected', 'info');
+  };
+
+  // Switch to Hardhat network
+  const switchToHardhat = async () => {
     try {
-      setLoading(true);
-      
-      // Get contract instances
-      const contracts = getContracts(providerInstance);
-      const { escrow, bondToken, oracle } = contracts;
-
-      // Get token address from escrow
-      try {
-        const tokenAddress = await escrow.token();
-        console.log("Bond token address:", tokenAddress);
-        // Re-initialize bond token with the correct address
-        const updatedBondToken = new ethers.Contract(tokenAddress, BondTokenArtifact.abi, providerInstance);
-        contracts.bondToken = updatedBondToken;
-      } catch (error) {
-        console.error("Failed to fetch token address from escrow:", error);
-      }
-
-      // Create batch of promises to fetch data in parallel
-      try {
-        const price = await escrow.priceWeiPerToken();
-        setTokenPrice(ethers.formatEther(price));
-      } catch (error) {
-        console.error("Failed to fetch priceWeiPerToken:", error);
-      }
-      
-      try {
-        const bal = await bondToken.balanceOf(address);
-        setBondBalance(ethers.formatEther(bal));
-      } catch (error) {
-        console.error("Failed to fetch balanceOf:", error);
-      }
-      
-      try {
-        const sold = await escrow.tokensSold();
-        setTokensSold(ethers.formatEther(sold));
-      } catch (error) {
-        console.error("Failed to fetch tokensSold:", error);
-      }
-      
-      try {
-        const cap = await escrow.capTokens();
-        setCapTokens(ethers.formatEther(cap));
-      } catch (error) {
-        console.error("Failed to fetch capTokens:", error);
-      }
-      
-      try {
-        const issuerAddr = await escrow.issuer();
-        setIsIssuer(issuerAddr.toLowerCase() === address.toLowerCase());
-      } catch (error) {
-        console.error("Failed to fetch issuer:", error);
-      }
-      
-      try {
-        const kwh = await oracle.cumulativeKwh();
-        setCumulativeKwh(Number(kwh));
-      } catch (error) {
-        console.error("Failed to fetch cumulativeKwh:", error);
-      }
-      
-      try {
-        const count = await escrow.milestonesCount();
-        
-        // Fetch milestones
-        if (Number(count) > 0) {
-          const milestonesArray = [];
-          for (let i = 0; i < Number(count); i++) {
-            const milestone = await escrow.milestones(i);
-            milestonesArray.push({
-              index: i,
-              threshold: Number(milestone.threshold),
-              releaseBps: Number(milestone.releaseBps),
-              achieved: milestone.achieved
-            });
-          }
-          setMilestones(milestonesArray);
-          
-          // Calculate impact score based on last milestone and current cumulative kWh
-          const lastMilestone = milestonesArray[milestonesArray.length - 1];
-          const maxThreshold = lastMilestone.threshold;
-          const currentKwh = cumulativeKwh; // Use state variable instead of local variable
-          const score = Math.min((Number(currentKwh || 0) / maxThreshold) * 100, 100);
-          setImpactScore(Math.round(score));
-        }
-      } catch (error) {
-        console.error("Failed to fetch milestonesCount:", error);
-      }
-      
-      try {
-        const end = await escrow.saleEnd();
-        setSaleEnd(Number(end));
-      } catch (error) {
-        console.error("Failed to fetch saleEnd:", error);
-      }
-      
-      // Calculate environmental impact metrics based on kWh
-      try {
-        const kwhValue = cumulativeKwh; // Use state variable
-        setEnvironmentalImpact({
-          co2Reduced: Math.round(kwhValue * 0.4), // kg CO2 saved (0.4kg per kWh)
-          treesPlanted: Math.round(kwhValue * 0.02), // trees equivalent (1 tree = ~50 kWh)
-          energySaved: kwhValue, // kWh saved
-          waterConserved: Math.round(kwhValue * 0.5) // liters of water conserved
-        });
-      } catch (error) {
-        console.error("Failed to calculate environmental impact:", error);
-      }
-
-      // If user is the issuer, fetch additional data
-      try {
-        // Get current issuer address
-        const currentIssuerAddr = await escrow.issuer();
-        setIsIssuer(currentIssuerAddr.toLowerCase() === address.toLowerCase());
-        
-        if (currentIssuerAddr.toLowerCase() === address.toLowerCase()) {
-          const [raised, released] = await Promise.all([
-            escrow.totalRaised(),
-            escrow.totalReleased()
-          ]);
-          
-          setTotalRaised(ethers.formatEther(raised));
-          setTotalReleased(ethers.formatEther(released));
-        }
-      } catch (error) {
-        console.error("Failed to check issuer status or fetch issuer data:", error);
-      }
-
-      showToast('Contract data updated', 'success');
+      await addHardhatNetworkToMetaMask();
+      showToast('Please approve adding Hardhat network in MetaMask', 'info');
     } catch (error) {
-      console.error('Error fetching contract data:', error);
+      console.error("Network switch error:", error);
       showToast(handleContractError(error), 'error');
-    } finally {
-      setLoading(false);
     }
   };
 
-  // Buy bonds
+  // Format large numbers for display
+  const formatNumber = (num, decimals = 2) => {
+    if (!num) return '0';
+    const value = parseFloat(num);
+    if (isNaN(value)) return '0';
+    
+    return value.toLocaleString(undefined, {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals
+    });
+  };
+
+  // Format eth values
+  const formatEth = (wei) => {
+    if (!wei) return '0';
+    try {
+      return parseFloat(ethers.formatEther(wei)).toFixed(4);
+    } catch (e) {
+      console.error("Format error:", e);
+      return '0';
+    }
+  };
+
+  // Format timestamp to readable date
+  const formatDate = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    const date = new Date(Number(timestamp) * 1000);
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+  };
+  
+  // Time remaining until sale end
+  const getTimeRemaining = () => {
+    if (!saleEnd) return 'N/A';
+    
+    const now = Math.floor(Date.now() / 1000);
+    const timeLeft = Number(saleEnd) - now;
+    
+    if (timeLeft <= 0) return 'Sale Ended';
+    
+    const days = Math.floor(timeLeft / (24 * 60 * 60));
+    const hours = Math.floor((timeLeft % (24 * 60 * 60)) / (60 * 60));
+    const minutes = Math.floor((timeLeft % (60 * 60)) / 60);
+    
+    return `${days}d ${hours}h ${minutes}m`;
+  };
+
+  // Calculate percentage of tokens sold
+  const getPercentageSold = () => {
+    if (!tokensSold || !capTokens || capTokens === '0') return 0;
+    try {
+      return (parseFloat(tokensSold) / parseFloat(capTokens) * 100).toFixed(1);
+    } catch (e) {
+      return 0;
+    }
+  };
+
+  // Calculate percentage of funds released
+  const getPercentageReleased = () => {
+    if (!totalReleased || !totalRaised || totalRaised === '0') return 0;
+    try {
+      const released = parseFloat(ethers.formatEther(totalReleased));
+      const raised = parseFloat(ethers.formatEther(totalRaised));
+      return (released / raised * 100).toFixed(1);
+    } catch (e) {
+      return 0;
+    }
+  };
+
+  // Function to handle buying bonds through our real-time data context
   const buyBonds = async () => {
-    if (!signer || !tokenAmount) {
-      showToast('Please enter a valid token amount', 'error');
+    if (!signer || !tokenAmount || parseFloat(tokenAmount) <= 0) {
+      showToast('Please enter a valid amount', 'error');
       return;
     }
+    
     setLoading(true);
     
     try {
-      // Get escrow contract with signer
-      const { escrow } = getContracts(signer);
+      // Calculate the cost in ETH based on token price and amount
+      const cost = (parseFloat(tokenAmount) * parseFloat(ethers.formatEther(tokenPrice))).toString();
+      const ethAmount = ethers.parseEther(cost);
       
-      // Parse token amount and calculate cost
-      const amount = ethers.parseUnits(tokenAmount, 18);
-      const price = await escrow.priceWeiPerToken();
-      const cost = (amount * price) / (10n**18n);
-      
-      // Send transaction
-      const tx = await escrow.invest(amount, { value: cost });
-      setTransactionHistory(prev => [...prev, { 
-        type: 'Buy Bonds', 
-        status: 'Pending', 
-        time: new Date().toLocaleTimeString(), 
-        txHash: tx.hash 
-      }]);
-      showToast('Transaction pending...', 'info');
-      
-      // Wait for confirmation
-      await tx.wait();
+      // Call the buy bonds function from our context
+      await contextBuyBonds(tokenAmount, ethAmount);
       
       // Update transaction history
-      setTransactionHistory(prev => 
-        prev.map(item => 
-          item.txHash === tx.hash 
-            ? { ...item, status: 'Success' } 
-            : item
-        )
-      );
+      setTransactionHistory(prev => [...prev, {
+        type: 'Buy Bonds',
+        status: 'Success',
+        amount: `${tokenAmount} GREEN`,
+        cost: `${cost} ETH`,
+        time: new Date().toLocaleTimeString()
+      }]);
       
-      showToast('Bonds purchased successfully', 'success');
-      
-      // Refresh data
-      fetchContractData(provider, walletAddress);
+      showToast(`Successfully purchased ${tokenAmount} GREEN bonds!`, 'success');
       setShowInvestModal(false);
       setTokenAmount('');
     } catch (error) {
@@ -383,59 +342,37 @@ const EcoFiDashboard = () => {
   };
 
   // Push impact data
-  const handlePushImpactData = async () => {
-    if (!signer || !deltaKwh || !deltaCO2) {
-      showToast('Please enter valid impact data', 'error');
+  const pushImpactData = async () => {
+    if (!signer || !deltaKwh || !deltaCO2 || !oracleKey) {
+      showToast('Please fill all fields', 'error');
       return;
     }
     
     setLoading(true);
     
     try {
-      const tx = await pushImpactData(
-        provider,
-        oracleKey || null, // Use provided key or null to use the key from env
-        deltaKwh,
-        deltaCO2
-      );
-      
-      if (!tx) {
-        throw new Error('Failed to push impact data');
-      }
-      
-      setTransactionHistory(prev => [...prev, { 
-        type: 'Push Impact Data', 
-        status: 'Pending', 
-        time: new Date().toLocaleTimeString(), 
-        txHash: tx.hash 
-      }]);
-      
-      showToast('Impact data transaction pending...', 'info');
-      
-      // Wait for confirmation
-      await tx.wait();
+      await submitImpactData(deltaKwh, deltaCO2, oracleKey);
       
       // Update transaction history
-      setTransactionHistory(prev => 
-        prev.map(item => 
-          item.txHash === tx.hash 
-            ? { ...item, status: 'Success' } 
-            : item
-        )
-      );
+      setTransactionHistory(prev => [...prev, {
+        type: 'Submit Impact',
+        status: 'Success',
+        amount: `${deltaKwh} kWh, ${deltaCO2} CO2`,
+        time: new Date().toLocaleTimeString()
+      }]);
       
-      showToast('Impact data updated successfully', 'success');
+      showToast('Impact data submitted successfully!', 'success');
       
-      // Reset form and refresh data
+      // Clear form
       setDeltaKwh('');
       setDeltaCO2('');
-      fetchContractData(provider, walletAddress);
+      setOracleKey('');
     } catch (error) {
-      console.error('Push impact data failed:', error);
-      setTransactionHistory(prev => [...prev, { 
-        type: 'Push Impact Data', 
-        status: 'Failed', 
-        time: new Date().toLocaleTimeString() 
+      console.error('Impact submission failed:', error);
+      setTransactionHistory(prev => [...prev, {
+        type: 'Submit Impact',
+        status: 'Failed',
+        time: new Date().toLocaleTimeString()
       }]);
       showToast(handleContractError(error), 'error');
     } finally {
@@ -443,780 +380,543 @@ const EcoFiDashboard = () => {
     }
   };
 
-  // UI Components
-
-  // Network Status indicator
-  const NetworkStatus = () => (
-    <div className="flex items-center justify-center gap-2 p-2 text-sm rounded-lg text-white">
-      {hardhatRunning === null ? (
-        <div className="flex items-center gap-1">
-          <RefreshCw className="w-4 h-4 animate-spin" />
-          <span>Checking network status...</span>
+  // Dashboard cards with enhanced visuals
+  const DashboardCard = ({ icon, title, value, subtext, color }) => {
+    const Icon = icon;
+    return (
+      <div className={`bg-gradient-to-br from-${color}-50 to-${color}-100 p-6 rounded-xl shadow-lg border border-${color}-200 relative overflow-hidden transition-all duration-300 hover:shadow-xl`}>
+        <div className="absolute -right-4 -top-4 opacity-10">
+          <Icon size={80} className={`text-${color}-900`} />
         </div>
-      ) : hardhatRunning ? (
-        <div className="flex items-center gap-1 text-green-400">
-          <CheckCircle className="w-4 h-4" />
-          <span>Hardhat node running</span>
+        <div className="flex items-center mb-4">
+          <Icon size={24} className={`text-${color}-600 mr-3`} />
+          <h3 className="text-gray-700 font-medium">{title}</h3>
         </div>
-      ) : (
-        <div className="flex items-center gap-1 text-red-400">
-          <AlertTriangle className="w-4 h-4" />
-          <span>Hardhat node not detected</span>
-        </div>
-      )}
-    </div>
-  );
-
-  // Connect Wallet Button
-  const ConnectWalletButton = () => (
-    <button
-      onClick={connectWallet}
-      disabled={connecting || loading}
-      className="flex items-center gap-2 bg-gradient-to-r from-custom-purple to-bright-purple text-white px-6 py-3 rounded-lg font-semibold shadow-lg hover:shadow-purple-500/30 transition-all duration-300 disabled:opacity-50"
-    >
-      {connecting ? (
-        <>
-          <RefreshCw className="w-5 h-5 animate-spin" />
-          Connecting...
-        </>
-      ) : (
-        <>
-          <Wallet className="w-5 h-5" />
-          Connect Wallet
-        </>
-      )}
-    </button>
-  );
-
-  // Wallet Status
-  const WalletStatus = () => (
-    <div className={`glass-card p-4 rounded-xl flex items-center gap-3 ${wrongNetwork ? 'border-red-500' : 'border-green-500'}`}>
-      <div className="bg-purple-900/50 p-2 rounded-lg">
-        <Wallet className="w-6 h-6 text-white" />
+        <p className="text-2xl font-bold text-gray-800 mb-1">{value}</p>
+        <p className="text-sm text-gray-600">{subtext}</p>
       </div>
-      <div className="flex-1">
-        {wrongNetwork ? (
-          <div className="text-red-400 text-sm flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4" />
-            <span>Wrong Network - Switch to Hardhat Local</span>
-          </div>
-        ) : (
-          <div className="text-white text-sm flex flex-col">
-            <div className="flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3 text-green-400" />
-              <span>Connected to Hardhat Local</span>
-            </div>
-            <div className="text-gray-400 truncate text-xs mt-0.5">{walletAddress}</div>
+    );
+  };
+  
+  // Chart component placeholder
+  const Chart = ({ data, title, type }) => {
+    return (
+      <div className="bg-white rounded-xl shadow-md p-6 h-full">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">{title}</h3>
+        <div className="h-48 bg-gray-100 rounded-lg flex items-center justify-center">
+          <BarChart3 size={36} className="text-indigo-400" />
+          <p className="ml-2 text-gray-500">Interactive {type} chart would appear here</p>
+        </div>
+      </div>
+    );
+  };
+  
+  // Transaction table component
+  const TransactionTable = ({ transactions }) => {
+    return (
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">Recent Transactions</h3>
+        <div className="overflow-x-auto">
+          <table className="min-w-full">
+            <thead>
+              <tr className="bg-gray-50">
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {transactions.length > 0 ? (
+                transactions.map((tx, index) => (
+                  <tr key={index}>
+                    <td className="px-4 py-3 text-sm text-gray-800">{tx.type}</td>
+                    <td className="px-4 py-3 text-sm">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        tx.status === 'Success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                      }`}>
+                        {tx.status === 'Success' ? <CheckCircle size={12} className="mr-1" /> : <AlertTriangle size={12} className="mr-1" />}
+                        {tx.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-800">{tx.amount || 'N/A'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500">{tx.time}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="4" className="px-4 py-3 text-sm text-gray-500 text-center">No transactions yet</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+  
+  // Enhanced milestone component
+  const MilestoneCard = ({ milestone, index }) => {
+    const colors = ['emerald', 'blue', 'indigo', 'purple', 'pink'];
+    const color = colors[index % colors.length];
+    const achieved = milestone.achieved || false;
+    
+    return (
+      <div className={`bg-white rounded-xl shadow-md p-6 border-l-4 border-${color}-500 relative ${
+        achieved ? 'bg-gradient-to-br from-white to-green-50' : ''
+      }`}>
+        {achieved && (
+          <div className="absolute top-3 right-3">
+            <CheckCircle2 size={20} className="text-green-500" />
           </div>
         )}
-      </div>
-    </div>
-  );
-
-  // Dashboard Metrics Card
-  const MetricsCard = ({ title, value, unit, icon: Icon, color }) => (
-    <div className="glass-card p-4 rounded-xl flex items-center gap-3 group hover:shadow-lg hover:shadow-purple-500/10 transition-all duration-300">
-      <div className={`${color} p-2 rounded-lg group-hover:scale-105 transition-transform duration-300`}>
-        <Icon className="w-6 h-6 text-white" />
-      </div>
-      <div>
-        <div className="text-gray-400 text-xs uppercase tracking-wider">{title}</div>
-        <div className="flex items-end gap-1">
-          <div className="text-white text-xl font-bold">{value}</div>
-          {unit && <div className="text-gray-400 text-xs">{unit}</div>}
+        <h4 className="text-lg font-semibold text-gray-800 mb-2">{milestone.title}</h4>
+        <p className="text-sm text-gray-600 mb-3">{milestone.description}</p>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-gray-700">Target: {milestone.target} kWh</span>
+          <span className={`text-sm font-medium ${achieved ? 'text-green-600' : 'text-gray-500'}`}>
+            {achieved ? 'Achieved' : 'In Progress'}
+          </span>
         </div>
       </div>
-    </div>
-  );
-
-  // Investment Calculator Component
-  const InvestmentCalculator = () => {
-    const [simAmount, setSimAmount] = useState('1');
-    const [simResults, setSimResults] = useState({
-      tokens: '0',
-      impact: 0,
-      returns: 0
-    });
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    const calculateInvestment = useCallback(() => {
-      if (!simAmount) return;
-      
-      const amount = parseFloat(simAmount);
-      const price = parseFloat(tokenPrice || '0.1');
-      
-      // Calculate tokens
-      const tokens = (amount / price).toFixed(2);
-      
-      // Calculate impact (simplified)
-      const impact = Math.round((amount * 10) / price); // kWh per ETH invested
-      
-      // Calculate potential returns (simplified)
-      const returns = (amount * 0.12).toFixed(4); // 12% return
-      
-      setSimResults({
-        tokens,
-        impact,
-        returns
-      });
-    }, [simAmount]);
-
-    useEffect(() => {
-      calculateInvestment();
-    }, [calculateInvestment]);
-
+    );
+  };
+  
+  // Environmental impact card with icon
+  const ImpactCard = ({ icon, title, value, unit, color }) => {
+    const Icon = icon;
+    
     return (
-      <div className="glass-card p-4 rounded-xl">
-        <h3 className="text-white text-lg font-semibold mb-3">Investment Simulator</h3>
-        <div className="mb-4">
-          <label className="block text-gray-400 text-sm mb-1">Investment Amount (ETH)</label>
-          <input
-            type="number"
-            value={simAmount}
-            onChange={(e) => setSimAmount(e.target.value)}
-            onBlur={calculateInvestment}
-            className="w-full bg-gray-900/50 border border-gray-700 rounded-lg px-4 py-2 text-white"
-            min="0.01"
-            step="0.01"
-          />
+      <div className={`flex items-center p-4 bg-${color}-50 rounded-lg shadow-sm border border-${color}-100`}>
+        <div className={`p-3 rounded-full bg-${color}-100 mr-4`}>
+          <Icon size={24} className={`text-${color}-600`} />
         </div>
-        
-        <div className="grid grid-cols-1 gap-3">
-          <div className="bg-gray-800/50 p-3 rounded-lg">
-            <div className="text-gray-400 text-xs">Tokens Received</div>
-            <div className="text-white text-lg font-semibold">{simResults.tokens} GBOND</div>
-          </div>
-          
-          <div className="bg-gray-800/50 p-3 rounded-lg">
-            <div className="text-gray-400 text-xs">Est. Environmental Impact</div>
-            <div className="text-white text-lg font-semibold">{simResults.impact} kWh</div>
-            <div className="text-gray-400 text-xs">≈ {Math.round(simResults.impact * 0.4)} kg CO₂ reduced</div>
-          </div>
-          
-          <div className="bg-gray-800/50 p-3 rounded-lg">
-            <div className="text-gray-400 text-xs">Potential Returns</div>
-            <div className="text-white text-lg font-semibold">{simResults.returns} ETH</div>
-            <div className="text-gray-400 text-xs">Based on milestone achievements</div>
-          </div>
+        <div>
+          <p className="text-sm text-gray-600">{title}</p>
+          <p className="text-xl font-bold text-gray-800">
+            {value} <span className="text-sm font-normal text-gray-600">{unit}</span>
+          </p>
         </div>
-        
-        <button 
-          onClick={() => {
-            setTokenAmount(simAmount);
-            setShowInvestModal(true);
-          }}
-          className="w-full mt-4 bg-gradient-to-r from-green-600 to-green-500 text-white px-4 py-2 rounded-lg font-semibold"
-        >
-          Invest Now
-        </button>
       </div>
     );
   };
 
-  // Milestone Progress Component
-  const MilestoneProgress = () => (
-    <div className="glass-card p-4 rounded-xl">
-      <h3 className="text-white text-lg font-semibold mb-3">Project Milestones</h3>
-      
-      {milestones.length === 0 ? (
-        <div className="text-gray-400 text-center py-4">No milestones defined</div>
-      ) : (
-        <div className="space-y-4">
-          {milestones.map((milestone, index) => (
-            <div key={index} className="relative">
-              <div className="flex items-center mb-1">
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center ${milestone.achieved ? 'bg-green-500' : 'bg-gray-700'}`}>
-                  {milestone.achieved ? <CheckCircle className="w-4 h-4 text-white" /> : <span className="text-white text-xs">{index + 1}</span>}
-                </div>
-                <div className="ml-2 text-white font-medium">
-                  Milestone {index + 1}: {milestone.threshold.toLocaleString()} kWh
-                </div>
-                {milestone.achieved && (
-                  <div className="ml-auto text-green-400 text-sm flex items-center">
-                    <CheckCircle className="w-3 h-3 mr-1" />
-                    Released
-                  </div>
-                )}
-              </div>
-              
-              <div className="ml-3 pl-6 border-l border-gray-700 pb-4">
-                <div className="text-gray-400 text-sm">Release Amount: {milestone.releaseBps/100}% of funds</div>
-                
-                <div className="mt-2 h-2 bg-gray-700 rounded-full overflow-hidden">
-                  <div 
-                    className={`h-full ${milestone.achieved ? 'bg-green-500' : 'bg-purple-600'}`}
-                    style={{ 
-                      width: `${Math.min(100, (cumulativeKwh / milestone.threshold) * 100)}%`
-                    }}
-                  />
-                </div>
-                <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <span>
-                    {Math.min(cumulativeKwh, milestone.threshold).toLocaleString()} / {milestone.threshold.toLocaleString()} kWh
-                  </span>
-                  <span>
-                    {Math.min(100, Math.round((cumulativeKwh / milestone.threshold) * 100))}%
+  // Main content component based on active tab
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'dashboard':
+        return (
+          <div className="space-y-8">
+            {/* Status banner */}
+            <div className="p-4 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Database size={20} className="text-blue-500" />
+                  <span className="font-medium text-gray-800">
+                    Blockchain Status: 
+                    {hardhatRunning === null ? (
+                      <span className="ml-2 text-gray-500">Checking...</span>
+                    ) : hardhatRunning ? (
+                      <span className="ml-2 text-green-600">Hardhat Running</span>
+                    ) : (
+                      <span className="ml-2 text-red-600">Hardhat Not Running</span>
+                    )}
                   </span>
                 </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-
-  // Impact Metrics Component
-  const ImpactMetrics = () => (
-    <div className="glass-card p-4 rounded-xl">
-      <h3 className="text-white text-lg font-semibold mb-3">Environmental Impact</h3>
-      
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-gray-800/50 p-3 rounded-lg">
-          <div className="flex items-center gap-2 text-green-400 mb-1">
-            <Leaf className="w-4 h-4" />
-            <span className="text-sm font-medium">CO₂ Reduced</span>
-          </div>
-          <div className="text-white text-lg font-semibold">{environmentalImpact.co2Reduced.toLocaleString()} kg</div>
-        </div>
-        
-        <div className="bg-gray-800/50 p-3 rounded-lg">
-          <div className="flex items-center gap-2 text-green-400 mb-1">
-            <Wind className="w-4 h-4" />
-            <span className="text-sm font-medium">Trees Equivalent</span>
-          </div>
-          <div className="text-white text-lg font-semibold">{environmentalImpact.treesPlanted.toLocaleString()}</div>
-        </div>
-        
-        <div className="bg-gray-800/50 p-3 rounded-lg">
-          <div className="flex items-center gap-2 text-blue-400 mb-1">
-            <Zap className="w-4 h-4" />
-            <span className="text-sm font-medium">Energy Generated</span>
-          </div>
-          <div className="text-white text-lg font-semibold">{environmentalImpact.energySaved.toLocaleString()} kWh</div>
-        </div>
-        
-        <div className="bg-gray-800/50 p-3 rounded-lg">
-          <div className="flex items-center gap-2 text-blue-400 mb-1">
-            <Lightbulb className="w-4 h-4" />
-            <span className="text-sm font-medium">Water Conserved</span>
-          </div>
-          <div className="text-white text-lg font-semibold">{environmentalImpact.waterConserved.toLocaleString()} L</div>
-        </div>
-      </div>
-      
-      <div className="mt-4">
-        <h4 className="text-white text-sm font-medium mb-2">Overall Impact Score</h4>
-        <div className="h-4 bg-gray-700 rounded-full overflow-hidden">
-          <div 
-            className="h-full bg-gradient-to-r from-green-500 to-custom-green"
-            style={{ width: `${impactScore}%` }}
-          />
-        </div>
-        <div className="flex justify-between text-xs text-gray-400 mt-1">
-          <span>Min</span>
-          <span>{impactScore}%</span>
-          <span>Max</span>
-        </div>
-      </div>
-    </div>
-  );
-
-  // Oracle Simulator (for issuer only)
-  const OracleSimulator = () => (
-    <div className="glass-card p-4 rounded-xl">
-      <h3 className="text-white text-lg font-semibold mb-3">Impact Data Simulator</h3>
-      <p className="text-gray-400 text-sm mb-4">
-        Push new impact data to the oracle to simulate project progress. This will trigger milestone releases when thresholds are met.
-      </p>
-      
-      <div className="space-y-3">
-        <div>
-          <label className="block text-gray-400 text-sm mb-1">New kWh Generated</label>
-          <input
-            type="number"
-            value={deltaKwh}
-            onChange={(e) => setDeltaKwh(e.target.value)}
-            className="w-full bg-gray-900/50 border border-gray-700 rounded-lg px-4 py-2 text-white"
-            placeholder="e.g. 1000"
-          />
-        </div>
-        
-        <div>
-          <label className="block text-gray-400 text-sm mb-1">CO₂ Offset (kg)</label>
-          <input
-            type="number"
-            value={deltaCO2}
-            onChange={(e) => setDeltaCO2(e.target.value)}
-            className="w-full bg-gray-900/50 border border-gray-700 rounded-lg px-4 py-2 text-white"
-            placeholder="e.g. 400"
-          />
-        </div>
-        
-        <div>
-          <label className="block text-gray-400 text-sm mb-1">Oracle Private Key (optional)</label>
-          <input
-            type="password"
-            value={oracleKey}
-            onChange={(e) => setOracleKey(e.target.value)}
-            className="w-full bg-gray-900/50 border border-gray-700 rounded-lg px-4 py-2 text-white"
-            placeholder="Using default key if empty"
-          />
-          <p className="text-gray-500 text-xs mt-1">
-            Leave empty to use the key from environment variables
-          </p>
-        </div>
-        
-        <button
-          onClick={handlePushImpactData}
-          disabled={loading || !deltaKwh || !deltaCO2}
-          className="w-full bg-gradient-to-r from-custom-purple to-bright-purple text-white px-4 py-2 rounded-lg font-semibold disabled:opacity-50"
-        >
-          {loading ? (
-            <span className="flex items-center justify-center gap-2">
-              <RefreshCw className="w-4 h-4 animate-spin" />
-              Processing...
-            </span>
-          ) : (
-            'Push Impact Data'
-          )}
-        </button>
-      </div>
-    </div>
-  );
-
-  // Transaction History Component
-  const TransactionHistoryComponent = () => (
-    <div className="glass-card p-4 rounded-xl">
-      <h3 className="text-white text-lg font-semibold mb-3">Transaction History</h3>
-      
-      {transactionHistory.length === 0 ? (
-        <div className="text-gray-400 text-center py-4">No transactions yet</div>
-      ) : (
-        <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
-          {transactionHistory.map((tx, index) => (
-            <div key={index} className="flex items-center justify-between bg-gray-800/50 p-2 rounded-lg">
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${
-                  tx.status === 'Success' ? 'bg-green-500' : 
-                  tx.status === 'Failed' ? 'bg-red-500' : 'bg-yellow-500'
-                }`} />
-                <span className="text-white text-sm">{tx.type}</span>
-              </div>
-              <div className="flex items-center gap-4">
-                <span className="text-gray-400 text-xs">{tx.time}</span>
-                <span className={`text-xs ${
-                  tx.status === 'Success' ? 'text-green-400' : 
-                  tx.status === 'Failed' ? 'text-red-400' : 'text-yellow-400'
-                }`}>{tx.status}</span>
-                {tx.txHash && (
-                  <a 
-                    href={`https://etherscan.io/tx/${tx.txHash}`} 
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-400 hover:text-blue-300 text-xs"
-                  >
-                    View
-                  </a>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-
-  // Investment Modal
-  const InvestModal = () => (
-    <div className="fixed inset-0 flex items-center justify-center bg-black/80 z-50">
-      <div className="glass-card p-6 rounded-xl w-full max-w-md animate-scale-in">
-        <h3 className="text-white text-xl font-semibold mb-4">Invest in Green Bond</h3>
-        
-        <div className="mb-6">
-          <label className="block text-gray-400 text-sm mb-2">Amount to Invest (ETH)</label>
-          <input
-            type="number"
-            value={tokenAmount}
-            onChange={(e) => setTokenAmount(e.target.value)}
-            className="w-full bg-gray-900/50 border border-gray-700 rounded-lg px-4 py-3 text-white text-lg"
-            placeholder="0.0"
-            min="0.01"
-            step="0.01"
-          />
-          
-          <div className="flex justify-between mt-2 text-sm">
-            <span className="text-gray-400">Price per token:</span>
-            <span className="text-white">{tokenPrice} ETH</span>
-          </div>
-          
-          <div className="flex justify-between mt-1 text-sm">
-            <span className="text-gray-400">Tokens to receive:</span>
-            <span className="text-white">
-              {tokenAmount && tokenPrice && tokenPrice !== '0' 
-                ? (parseFloat(tokenAmount) / parseFloat(tokenPrice)).toFixed(2) 
-                : '0'} GBOND
-            </span>
-          </div>
-        </div>
-        
-        <div className="flex gap-3">
-          <button
-            onClick={() => setShowInvestModal(false)}
-            className="flex-1 bg-gray-700 text-white px-4 py-3 rounded-lg font-semibold"
-          >
-            Cancel
-          </button>
-          
-          <button
-            onClick={buyBonds}
-            disabled={loading || !tokenAmount}
-            className="flex-1 bg-gradient-to-r from-green-600 to-green-500 text-white px-4 py-3 rounded-lg font-semibold disabled:opacity-50"
-          >
-            {loading ? (
-              <span className="flex items-center justify-center gap-2">
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                Processing...
-              </span>
-            ) : (
-              'Confirm Investment'
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
-  // Sample project data
-  const projectsData = [
-    {
-      id: 1,
-      name: "Solar Farm Alpha",
-      image: "https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80",
-      location: "California, USA",
-      description: "Large-scale solar farm generating clean energy for over 10,000 homes.",
-      impact: "15,000 tons CO2 reduction",
-      progress: 75
-    },
-    {
-      id: 2,
-      name: "Wind Energy Project",
-      image: "https://images.unsplash.com/photo-1548337138-e87d889cc369?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2074&q=80",
-      location: "Scotland, UK",
-      description: "Offshore wind farm with 50 turbines providing renewable energy.",
-      impact: "20,000 tons CO2 reduction",
-      progress: 60
-    },
-    {
-      id: 3,
-      name: "Hydro Power Initiative",
-      image: "https://images.unsplash.com/photo-1566841911190-83ddc8f5cf3f?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80",
-      location: "British Columbia, Canada",
-      description: "Sustainable hydroelectric power project with minimal environmental impact.",
-      impact: "12,500 tons CO2 reduction",
-      progress: 90
-    }
-  ];
-
-  // Projects component
-  const Projects = () => (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-      {projectsData.map(project => (
-        <div key={project.id} className="glass-card p-6 rounded-2xl hover:shadow-xl hover:shadow-purple-500/10 transition-all duration-300">
-          <div 
-            className="h-40 rounded-xl mb-4 bg-cover bg-center" 
-            style={{ backgroundImage: `url(${project.image})` }}
-          />
-          <h3 className="text-xl font-bold text-white mb-1">{project.name}</h3>
-          <p className="text-gray-400 text-sm mb-3 flex items-center">
-            <Globe className="w-3 h-3 mr-1" />
-            {project.location}
-          </p>
-          <p className="text-gray-300 text-sm mb-4">{project.description}</p>
-          
-          <div className="mb-3">
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-gray-400">Progress</span>
-              <span className="text-white">{project.progress}%</span>
-            </div>
-            <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-gradient-to-r from-green-500 to-green-400"
-                style={{ width: `${project.progress}%` }}
-              />
-            </div>
-          </div>
-          
-          <div className="flex items-center text-green-400 text-sm">
-            <Leaf className="w-4 h-4 mr-1" />
-            {project.impact}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-
-  // Tab navigation
-  const tabs = [
-    { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
-    { id: 'projects', label: 'Projects', icon: Globe },
-    { id: 'impact', label: 'Impact', icon: Leaf },
-    { id: 'transactions', label: 'Transactions', icon: Database }
-  ];
-
-  // Conditionally add issuer tab
-  if (isIssuer) {
-    tabs.push({ id: 'issuer', label: 'Issuer Controls', icon: Lock });
-  }
-
-  // Main component render
-  return (
-    <div className="min-h-screen bg-gray-900 text-white overflow-hidden relative">
-      {/* Enhanced particle background */}
-      <EnhancedParticleBackground />
-      
-      {/* Main container */}
-      <div className="container mx-auto px-4 py-8 relative z-10">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-center mb-8">
-          <div className="mb-4 md:mb-0">
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-green-400 to-custom-purple bg-clip-text text-transparent">
-              EcoFi Green Bond Platform
-            </h1>
-            <p className="text-gray-400">Tokenized Green Bonds with Impact-Linked Returns</p>
-          </div>
-          
-          <div className="flex items-center gap-4">
-            <NetworkStatus />
-            
-            {walletConnected ? (
-              <WalletStatus />
-            ) : (
-              <ConnectWalletButton />
-            )}
-          </div>
-        </div>
-
-        {/* Content based on wallet connection */}
-        {!walletConnected ? (
-          // Not connected state
-          <div className="glass-card-3d p-8 rounded-2xl text-center max-w-2xl mx-auto">
-            <Sparkles className="w-16 h-16 text-custom-purple mx-auto mb-4" />
-            
-            <h2 className="text-2xl font-bold mb-2">Welcome to EcoFi Green Bond Platform</h2>
-            <p className="text-gray-400 mb-6">
-              Connect your wallet to invest in tokenized green bonds and track their environmental impact in real-time.
-            </p>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div className="bg-gray-800/50 p-4 rounded-lg">
-                <DollarSign className="w-6 h-6 text-green-400 mx-auto mb-2" />
-                <h3 className="text-white font-semibold">Invest</h3>
-                <p className="text-gray-400 text-sm">Purchase tokenized green bonds</p>
-              </div>
-              
-              <div className="bg-gray-800/50 p-4 rounded-lg">
-                <Leaf className="w-6 h-6 text-green-400 mx-auto mb-2" />
-                <h3 className="text-white font-semibold">Impact</h3>
-                <p className="text-gray-400 text-sm">Track environmental metrics</p>
-              </div>
-              
-              <div className="bg-gray-800/50 p-4 rounded-lg">
-                <TrendingUp className="w-6 h-6 text-green-400 mx-auto mb-2" />
-                <h3 className="text-white font-semibold">Returns</h3>
-                <p className="text-gray-400 text-sm">Earn milestone-based rewards</p>
-              </div>
-            </div>
-            
-            <ConnectWalletButton />
-          </div>
-        ) : (
-          // Connected state
-          <div>
-            {/* Tab navigation */}
-            <div className="glass-card mb-6 p-1 rounded-xl flex overflow-x-auto custom-scrollbar">
-              {tabs.map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium min-w-max ${
-                    activeTab === tab.id 
-                      ? 'bg-gradient-to-r from-custom-purple to-bright-purple text-white' 
-                      : 'text-gray-400 hover:text-white hover:bg-gray-800/60'
-                  }`}
-                >
-                  <tab.icon className="w-4 h-4" />
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-            
-            {/* Dashboard tab */}
-            {activeTab === 'dashboard' && (
-              <div className="space-y-6">
-                {/* Top metrics */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <MetricsCard 
-                    title="Bond Balance" 
-                    value={bondBalance} 
-                    unit="GBOND" 
-                    icon={Award} 
-                    color="bg-purple-900/50" 
-                  />
-                  
-                  <MetricsCard 
-                    title="Token Price" 
-                    value={tokenPrice} 
-                    unit="ETH" 
-                    icon={DollarSign} 
-                    color="bg-green-900/50" 
-                  />
-                  
-                  <MetricsCard 
-                    title="Impact Score" 
-                    value={impactScore} 
-                    unit="%" 
-                    icon={Zap} 
-                    color="bg-blue-900/50" 
-                  />
-                  
-                  <MetricsCard 
-                    title="Energy Generated" 
-                    value={cumulativeKwh.toLocaleString()} 
-                    unit="kWh" 
-                    icon={Flame} 
-                    color="bg-orange-900/50" 
-                  />
+                
+                <div className="flex items-center space-x-2 mt-2 sm:mt-0">
+                  <Wallet size={20} className="text-indigo-500" />
+                  <span className="font-medium text-gray-800">Wallet: {walletConnected ? (
+                    <span className="text-green-600">Connected</span>
+                  ) : (
+                    <span className="text-red-600">Not Connected</span>
+                  )}</span>
                 </div>
                 
-                {/* Main dashboard content */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="md:col-span-2 space-y-6">
-                    <MilestoneProgress />
-                    <ImpactMetrics />
-                  </div>
-                  
-                  <div className="space-y-6">
-                    <InvestmentCalculator />
-                    <TransactionHistoryComponent />
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {/* Projects tab */}
-            {activeTab === 'projects' && (
-              <div className="space-y-6">
-                <h2 className="text-2xl font-bold text-white mb-4">Funded Projects</h2>
-                <Projects />
-              </div>
-            )}
-            
-            {/* Impact tab */}
-            {activeTab === 'impact' && (
-              <div className="space-y-6">
-                <h2 className="text-2xl font-bold text-white mb-4">Environmental Impact</h2>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <ImpactMetrics />
-                  
-                  <div className="glass-card p-4 rounded-xl">
-                    <h3 className="text-white text-lg font-semibold mb-3">Impact Certificates</h3>
-                    <p className="text-gray-400 text-sm mb-4">
-                      Generate a personalized certificate showing your contribution to environmental impact.
-                    </p>
-                    
-                    <div className="bg-gray-800/50 p-4 rounded-lg mb-4">
-                      <div className="flex justify-between mb-2">
-                        <span className="text-gray-400">Your Bond Balance:</span>
-                        <span className="text-white font-semibold">{bondBalance} GBOND</span>
-                      </div>
-                      
-                      <div className="flex justify-between mb-2">
-                        <span className="text-gray-400">Your Impact Contribution:</span>
-                        <span className="text-white font-semibold">
-                          {Math.round(parseFloat(bondBalance) / (parseFloat(tokensSold) || 1) * environmentalImpact.co2Reduced).toLocaleString()} kg CO₂
-                        </span>
-                      </div>
-                      
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Certificate ID:</span>
-                        <span className="text-white font-semibold">
-                          ECO-{walletAddress.substring(2, 8).toUpperCase()}
-                        </span>
-                      </div>
-                    </div>
-                    
-                    <button className="w-full bg-gradient-to-r from-custom-purple to-bright-purple text-white px-4 py-2 rounded-lg font-semibold">
-                      Download Impact Certificate
+                {wrongNetwork && (
+                  <div className="flex items-center space-x-2 mt-2 sm:mt-0">
+                    <AlertTriangle size={20} className="text-amber-500" />
+                    <span className="text-amber-600 font-medium">Wrong Network</span>
+                    <button 
+                      onClick={switchToHardhat}
+                      className="ml-2 px-3 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600 transition"
+                    >
+                      Switch
                     </button>
                   </div>
-                </div>
-              </div>
-            )}
-            
-            {/* Transactions tab */}
-            {activeTab === 'transactions' && (
-              <div className="space-y-6">
-                <h2 className="text-2xl font-bold text-white mb-4">Transaction History</h2>
-                <TransactionHistoryComponent />
-              </div>
-            )}
-            
-            {/* Issuer Controls tab (only for issuer) */}
-            {activeTab === 'issuer' && isIssuer && (
-              <div className="space-y-6">
-                <h2 className="text-2xl font-bold text-white mb-4">Issuer Controls</h2>
+                )}
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="glass-card p-4 rounded-xl">
-                    <h3 className="text-white text-lg font-semibold mb-3">Project Statistics</h3>
-                    
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="bg-gray-800/50 p-3 rounded-lg">
-                        <div className="text-gray-400 text-xs">Total Raised</div>
-                        <div className="text-white text-lg font-semibold">{totalRaised} ETH</div>
-                      </div>
-                      
-                      <div className="bg-gray-800/50 p-3 rounded-lg">
-                        <div className="text-gray-400 text-xs">Total Released</div>
-                        <div className="text-white text-lg font-semibold">{totalReleased} ETH</div>
-                      </div>
-                      
-                      <div className="bg-gray-800/50 p-3 rounded-lg">
-                        <div className="text-gray-400 text-xs">Tokens Sold</div>
-                        <div className="text-white text-lg font-semibold">{tokensSold} / {capTokens} GBOND</div>
-                      </div>
-                      
-                      <div className="bg-gray-800/50 p-3 rounded-lg">
-                        <div className="text-gray-400 text-xs">Investors</div>
-                        <div className="text-white text-lg font-semibold">
-                          {/* This would need to be tracked on the contract */}
-                          {Math.floor(Math.random() * 20) + 1}
-                        </div>
-                      </div>
-                      
-                      <div className="bg-gray-800/50 p-3 rounded-lg">
-                        <div className="text-gray-400 text-xs">Sale Ends In</div>
-                        <div className="text-white text-lg font-semibold">
-                          {saleEnd > Date.now() / 1000 
-                            ? `${Math.floor((saleEnd - Date.now() / 1000) / 86400)} days` 
-                            : 'Ended'}
-                        </div>
-                      </div>
+                <div className="w-full sm:w-auto mt-3 sm:mt-0">
+                  {!walletConnected ? (
+                    <button
+                      onClick={connectWallet}
+                      disabled={connecting || !hardhatRunning}
+                      className={`px-4 py-2 rounded-lg font-medium flex items-center ${
+                        connecting || !hardhatRunning ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                      }`}
+                    >
+                      {connecting ? <RefreshCw size={16} className="mr-2 animate-spin" /> : <Wallet size={16} className="mr-2" />}
+                      {connecting ? 'Connecting...' : 'Connect Wallet'}
+                    </button>
+                  ) : (
+                    <div className="flex items-center space-x-2">
+                      <span className="text-gray-600 text-sm truncate max-w-[120px] sm:max-w-xs">
+                        {walletAddress}
+                      </span>
+                      <button
+                        onClick={disconnectWallet}
+                        className="px-3 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition"
+                      >
+                        Disconnect
+                      </button>
                     </div>
-                  </div>
-                  
-                  <OracleSimulator />
+                  )}
                 </div>
               </div>
-            )}
+            </div>
+            
+            {/* Main dashboard cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <DashboardCard 
+                icon={Leaf} 
+                title="Bond Balance" 
+                value={`${formatNumber(bondBalance)} GREEN`} 
+                subtext="Your green bond tokens" 
+                color="emerald"
+              />
+              <DashboardCard 
+                icon={DollarSign} 
+                title="Token Price" 
+                value={`${formatEth(tokenPrice)} ETH`} 
+                subtext="Current bond token price" 
+                color="blue"
+              />
+              <DashboardCard 
+                icon={Globe} 
+                title="Impact Score" 
+                value={impactScore.toFixed(2)} 
+                subtext="Current environmental impact" 
+                color="indigo"
+              />
+              <DashboardCard 
+                icon={TrendingUp} 
+                title="Time Remaining" 
+                value={getTimeRemaining()} 
+                subtext="Until sale ends" 
+                color="purple"
+              />
+            </div>
+            
+            {/* Sale progress and charts */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-white rounded-xl shadow-md p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-gray-800">Sale Progress</h3>
+                  <span className="text-sm text-gray-500">
+                    {formatNumber(tokensSold)} / {formatNumber(capTokens)} GREEN
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
+                  <div 
+                    className="bg-gradient-to-r from-blue-500 to-indigo-600 h-2.5 rounded-full" 
+                    style={{ width: `${getPercentageSold()}%` }}
+                  ></div>
+                </div>
+                <div className="flex justify-between items-center text-sm text-gray-600">
+                  <span>{getPercentageSold()}% Sold</span>
+                  <span>{formatEth(totalRaised)} ETH Raised</span>
+                </div>
+              </div>
+              
+              <div className="bg-white rounded-xl shadow-md p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-gray-800">Funds Released</h3>
+                  <span className="text-sm text-gray-500">
+                    {formatEth(totalReleased)} / {formatEth(totalRaised)} ETH
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
+                  <div 
+                    className="bg-gradient-to-r from-green-500 to-emerald-600 h-2.5 rounded-full" 
+                    style={{ width: `${getPercentageReleased()}%` }}
+                  ></div>
+                </div>
+                <div className="flex justify-between items-center text-sm text-gray-600">
+                  <span>{getPercentageReleased()}% Released</span>
+                  <span>Based on impact metrics</span>
+                </div>
+              </div>
+            </div>
+            
+            {/* Environmental impact metrics */}
+            <div className="bg-white rounded-xl shadow-md p-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">Environmental Impact</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <ImpactCard
+                  icon={Leaf}
+                  title="CO₂ Reduced"
+                  value={formatNumber(environmentalImpact.co2Reduced)}
+                  unit="tons"
+                  color="emerald"
+                />
+                <ImpactCard
+                  icon={Zap}
+                  title="Clean Energy"
+                  value={formatNumber(cumulativeKwh)}
+                  unit="kWh"
+                  color="amber"
+                />
+                <ImpactCard
+                  icon={Sparkles}
+                  title="Trees Equivalent"
+                  value={formatNumber(impactMetrics.treesPlanted, 0)}
+                  unit="trees"
+                  color="green"
+                />
+                <ImpactCard
+                  icon={Wind}
+                  title="Water Conserved"
+                  value={formatNumber(impactMetrics.waterConserved, 0)}
+                  unit="gallons"
+                  color="blue"
+                />
+              </div>
+            </div>
+            
+            {/* Charts and analytics */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Chart 
+                title="Energy Production Over Time" 
+                type="line"
+                data={[]} // This would be real data in a production app
+              />
+              <Chart 
+                title="Impact Metrics Breakdown" 
+                type="pie"
+                data={[]} // This would be real data in a production app
+              />
+            </div>
+            
+            {/* Project milestones */}
+            <div className="bg-white rounded-xl shadow-md p-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">Project Milestones</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {milestones.length > 0 ? (
+                  milestones.map((milestone, index) => (
+                    <MilestoneCard key={index} milestone={milestone} index={index} />
+                  ))
+                ) : (
+                  <div className="col-span-full text-center py-8 text-gray-500">
+                    <Lightbulb size={32} className="mx-auto mb-2 text-gray-400" />
+                    <p>No milestones have been defined yet.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* Transactions */}
+            <TransactionTable transactions={transactionHistory} />
+            
+            {/* Action buttons */}
+            <div className="flex flex-wrap gap-4 justify-center sm:justify-start">
+              <button
+                onClick={() => setShowInvestModal(true)}
+                disabled={!walletConnected || loading}
+                className={`px-6 py-3 rounded-lg font-medium flex items-center shadow-md ${
+                  !walletConnected || loading ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700'
+                }`}
+              >
+                <DollarSign size={18} className="mr-2" />
+                Invest in Green Bonds
+              </button>
+              
+              {isIssuer && (
+                <button
+                  onClick={() => setActiveTab('oracle')}
+                  disabled={!walletConnected || loading}
+                  className={`px-6 py-3 rounded-lg font-medium flex items-center shadow-md ${
+                    !walletConnected || loading ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:from-blue-600 hover:to-indigo-700'
+                  }`}
+                >
+                  <Database size={18} className="mr-2" />
+                  Submit Impact Data
+                </button>
+              )}
+              
+              <button
+                onClick={() => refreshData && refreshData(signer)}
+                disabled={!walletConnected || dataLoading}
+                className={`px-6 py-3 rounded-lg font-medium flex items-center shadow-md ${
+                  !walletConnected || dataLoading ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                }`}
+              >
+                <RefreshCw size={18} className={`mr-2 ${dataLoading ? 'animate-spin' : ''}`} />
+                Refresh Data
+              </button>
+            </div>
           </div>
-        )}
+        );
+        
+      case 'oracle':
+        return (
+          <div className="bg-white rounded-xl shadow-md p-6">
+            <h3 className="text-xl font-semibold text-gray-800 mb-6">Oracle Data Submission</h3>
+            <p className="text-gray-600 mb-6">
+              As a project issuer, you can submit verified impact data that will trigger fund releases based on achieved milestones.
+            </p>
+            
+            <div className="space-y-4 max-w-md mx-auto">
+              <div>
+                <label htmlFor="deltaKwh" className="block text-sm font-medium text-gray-700 mb-1">
+                  Energy Generated (kWh)
+                </label>
+                <input
+                  id="deltaKwh"
+                  type="number"
+                  value={deltaKwh}
+                  onChange={(e) => setDeltaKwh(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder="Enter kWh generated"
+                />
+              </div>
+              
+              <div>
+                <label htmlFor="deltaCO2" className="block text-sm font-medium text-gray-700 mb-1">
+                  CO₂ Reduced (tons)
+                </label>
+                <input
+                  id="deltaCO2"
+                  type="number"
+                  value={deltaCO2}
+                  onChange={(e) => setDeltaCO2(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder="Enter CO₂ reduced"
+                />
+              </div>
+              
+              <div>
+                <label htmlFor="oracleKey" className="block text-sm font-medium text-gray-700 mb-1">
+                  Oracle Verification Key
+                </label>
+                <input
+                  id="oracleKey"
+                  type="text"
+                  value={oracleKey}
+                  onChange={(e) => setOracleKey(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder="Enter verification key"
+                />
+              </div>
+              
+              <div className="pt-4">
+                <button
+                  onClick={pushImpactData}
+                  disabled={!walletConnected || loading || !isIssuer}
+                  className={`w-full px-6 py-3 rounded-lg font-medium flex items-center justify-center ${
+                    !walletConnected || loading || !isIssuer 
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                      : 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:from-blue-600 hover:to-indigo-700'
+                  }`}
+                >
+                  {loading ? <RefreshCw size={18} className="mr-2 animate-spin" /> : <Database size={18} className="mr-2" />}
+                  {loading ? 'Submitting...' : 'Submit Impact Data'}
+                </button>
+              </div>
+              
+              <div className="pt-2 text-center">
+                <button
+                  onClick={() => setActiveTab('dashboard')}
+                  className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
+                >
+                  Return to Dashboard
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+        
+      default:
+        return <div>Page not found</div>;
+    }
+  };
+
+  // Investment modal
+  const renderInvestModal = () => {
+    if (!showInvestModal) return null;
+    
+    const calculateCost = () => {
+      if (!tokenAmount || !tokenPrice) return '0';
+      return (parseFloat(tokenAmount) * parseFloat(ethers.formatEther(tokenPrice))).toFixed(6);
+    };
+    
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 relative">
+          <button
+            onClick={() => setShowInvestModal(false)}
+            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+          >
+            ✕
+          </button>
+          
+          <h3 className="text-xl font-semibold text-gray-800 mb-6">Invest in Green Bonds</h3>
+          
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="tokenAmount" className="block text-sm font-medium text-gray-700 mb-1">
+                Amount of GREEN Tokens
+              </label>
+              <input
+                id="tokenAmount"
+                type="number"
+                value={tokenAmount}
+                onChange={(e) => setTokenAmount(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                placeholder="Enter amount to purchase"
+              />
+            </div>
+            
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm text-gray-600">Price per token:</span>
+                <span className="text-sm font-medium">{formatEth(tokenPrice)} ETH</span>
+              </div>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm text-gray-600">Tokens to purchase:</span>
+                <span className="text-sm font-medium">{tokenAmount || '0'} GREEN</span>
+              </div>
+              <div className="border-t border-gray-200 pt-2 mt-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-800">Total cost:</span>
+                  <span className="text-sm font-bold">{calculateCost()} ETH</span>
+                </div>
+              </div>
+            </div>
+            
+            <button
+              onClick={buyBonds}
+              disabled={loading || !tokenAmount || parseFloat(tokenAmount) <= 0}
+              className={`w-full px-6 py-3 rounded-lg font-medium flex items-center justify-center mt-2 ${
+                loading || !tokenAmount || parseFloat(tokenAmount) <= 0
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                  : 'bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700'
+              }`}
+            >
+              {loading ? <RefreshCw size={18} className="mr-2 animate-spin" /> : <DollarSign size={18} className="mr-2" />}
+              {loading ? 'Processing...' : 'Confirm Purchase'}
+            </button>
+          </div>
+        </div>
       </div>
-      
-      {/* Investment modal */}
-      {showInvestModal && <InvestModal />}
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 relative overflow-hidden">
+      {/* Enhanced particle background */}
+      <div className="absolute inset-0 z-0">
+        <EnhancedParticleBackground />
+      </div>
       
       {/* Toast notifications */}
       <div className="fixed top-4 right-4 z-50 space-y-2">
@@ -1225,10 +925,110 @@ const EcoFiDashboard = () => {
             key={toast.id}
             message={toast.message}
             type={toast.type}
-            onClose={() => removeToast(toast.id)}
+            onClose={() => setToasts(toasts.filter(t => t.id !== toast.id))}
           />
         ))}
       </div>
+      
+      {/* Main content */}
+      <div className="relative z-10">
+        {/* Header */}
+        <header className="bg-white shadow-md py-4">
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center">
+              <h1 className="text-2xl font-bold text-indigo-800 flex items-center">
+                <Leaf size={24} className="mr-2 text-green-500" />
+                EcoFi Green Bonds
+              </h1>
+              
+              <nav className="hidden md:flex space-x-1">
+                <button
+                  onClick={() => setActiveTab('dashboard')}
+                  className={`px-4 py-2 rounded-lg ${
+                    activeTab === 'dashboard' 
+                      ? 'bg-indigo-100 text-indigo-800 font-medium' 
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  Dashboard
+                </button>
+                
+                {isIssuer && (
+                  <button
+                    onClick={() => setActiveTab('oracle')}
+                    className={`px-4 py-2 rounded-lg ${
+                      activeTab === 'oracle' 
+                        ? 'bg-indigo-100 text-indigo-800 font-medium' 
+                        : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    Oracle
+                  </button>
+                )}
+              </nav>
+              
+              <div className="flex items-center space-x-2">
+                {walletConnected ? (
+                  <div className="hidden sm:flex items-center bg-gray-100 rounded-full px-4 py-1">
+                    <div className="w-2 h-2 rounded-full bg-green-500 mr-2"></div>
+                    <span className="text-sm text-gray-700 font-medium truncate max-w-[100px] md:max-w-[140px]">
+                      {walletAddress}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="hidden sm:flex items-center">
+                    <Lock size={16} className="text-gray-400 mr-1" />
+                    <span className="text-sm text-gray-500">Not Connected</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </header>
+        
+        {/* Main content area */}
+        <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {dataError && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 flex items-start">
+              <AlertTriangle size={20} className="mr-2 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium">Error loading data</p>
+                <p className="text-sm">{dataError}</p>
+              </div>
+            </div>
+          )}
+          
+          {renderContent()}
+        </main>
+        
+        {/* Footer */}
+        <footer className="bg-white border-t border-gray-200 py-6 mt-12">
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-col md:flex-row justify-between items-center">
+              <div className="mb-4 md:mb-0">
+                <p className="text-gray-600 text-sm">
+                  © 2023 EcoFi Green Bonds Platform
+                </p>
+              </div>
+              
+              <div className="flex space-x-6">
+                <a href="#" className="text-gray-500 hover:text-indigo-600">
+                  About
+                </a>
+                <a href="#" className="text-gray-500 hover:text-indigo-600">
+                  Documentation
+                </a>
+                <a href="#" className="text-gray-500 hover:text-indigo-600">
+                  GitHub
+                </a>
+              </div>
+            </div>
+          </div>
+        </footer>
+      </div>
+      
+      {/* Investment modal */}
+      {renderInvestModal()}
     </div>
   );
 };
