@@ -382,18 +382,75 @@ export async function verifyHardhatRunning() {
  */
 export async function pushImpactData(signer, deltaKwh, deltaCO2) {
   try {
+    console.log('🔍 Push impact called with:', {
+      signer: signer ? 'Present' : 'Missing',
+      deltaKwh: deltaKwh,
+      deltaCO2: deltaCO2,
+      deltaKwhType: typeof deltaKwh,
+      deltaCO2Type: typeof deltaCO2
+    });
+    
     if (!signer) {
       throw new Error('Signer is required to push impact data');
     }
     
+    // More robust validation
+    if (deltaKwh === null || deltaKwh === undefined || deltaKwh === '' || deltaKwh === 0) {
+      throw new Error(`deltaKwh is invalid: ${deltaKwh} (type: ${typeof deltaKwh})`);
+    }
+    
+    if (deltaCO2 === null || deltaCO2 === undefined || deltaCO2 === '' || deltaCO2 === 0) {
+      throw new Error(`deltaCO2 is invalid: ${deltaCO2} (type: ${typeof deltaCO2})`);
+    }
+    
+    // Convert to numbers first, then validate
+    const kwhValue = Number(deltaKwh);
+    const co2Value = Number(deltaCO2);
+    
+    console.log('🔍 After number conversion:', {
+      kwhValue: kwhValue,
+      co2Value: co2Value,
+      kwhIsNaN: isNaN(kwhValue),
+      co2IsNaN: isNaN(co2Value)
+    });
+    
+    if (isNaN(kwhValue) || kwhValue <= 0) {
+      throw new Error(`deltaKwh must be a positive number, got: ${deltaKwh} -> ${kwhValue}`);
+    }
+    
+    if (isNaN(co2Value) || co2Value <= 0) {
+      throw new Error(`deltaCO2 must be a positive number, got: ${deltaCO2} -> ${co2Value}`);
+    }
+    
+    console.log('📊 Submitting impact data:', {
+      deltaKwh: kwhValue,
+      deltaCO2: co2Value
+    });
+    
     // Get oracle contract with signer
     const { oracle } = getContracts(signer);
     
+    // Convert to integers, then to BigInt for contract call
+    const kwhInteger = Math.floor(kwhValue);
+    const co2Integer = Math.floor(co2Value);
+    
+    console.log('🔍 Before BigInt conversion:', {
+      kwhInteger: kwhInteger,
+      co2Integer: co2Integer,
+      kwhIntegerType: typeof kwhInteger,
+      co2IntegerType: typeof co2Integer
+    });
+    
+    const kwhBigInt = ethers.getBigInt(kwhInteger);
+    const co2BigInt = ethers.getBigInt(co2Integer);
+    
+    console.log('📋 Contract call with values:', {
+      kwhBigInt: kwhBigInt.toString(),
+      co2BigInt: co2BigInt.toString()
+    });
+    
     // Send transaction
-    return await oracle.pushImpact(
-      ethers.getBigInt(deltaKwh), 
-      ethers.getBigInt(deltaCO2)
-    );
+    return await oracle.pushImpact(kwhBigInt, co2BigInt);
   } catch (error) {
     console.error('Push impact failed:', error);
     throw error;

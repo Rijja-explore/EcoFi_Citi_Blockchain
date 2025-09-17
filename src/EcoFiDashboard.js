@@ -393,8 +393,7 @@ const EcoFiDashboard = () => {
     
     try {
       const tx = await pushImpactData(
-        provider,
-        oracleKey || null, // Use provided key or null to use the key from env
+        signer,
         deltaKwh,
         deltaCO2
       );
