@@ -1,0 +1,139 @@
+/* Custom TailwindCSS utilities */
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&family=Inter:wght@300;400;500;600&family=DM+Mono&display=swap');
+
+:root {
+  --custom-purple: #8A5CF6;
+  --bright-purple: #4F46E5;
+  --custom-green: #10B981;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #0f172a; /* Matches slate-900 */
+  color: white;
+}
+
+/* Glass card styling */
+.glass-card {
+  background: rgba(30, 41, 59, 0.5);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.glass-card-3d {
+  background: rgba(30, 41, 59, 0.5);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 
+    0 10px 15px -3px rgba(0, 0, 0, 0.1),
+    0 4px 6px -2px rgba(0, 0, 0, 0.05),
+    0 0 0 1px rgba(255, 255, 255, 0.1);
+  transform: perspective(1000px) rotateX(0deg);
+  transition: transform 0.3s ease;
+}
+
+.glass-card-3d:hover {
+  transform: perspective(1000px) rotateX(2deg);
+}
+
+/* Custom animations */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease forwards;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.3s ease forwards;
+}
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(30, 41, 59, 0.5);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(138, 92, 246, 0.5);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(138, 92, 246, 0.8);
+}
+
+/* Custom colors */
+.bg-custom-purple {
+  background-color: var(--custom-purple);
+}
+
+.bg-bright-purple {
+  background-color: var(--bright-purple);
+}
+
+.bg-custom-green {
+  background-color: var(--custom-green);
+}
+
+.from-custom-purple {
+  --tw-gradient-from: var(--custom-purple);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(138, 92, 246, 0));
+}
+
+.to-bright-purple {
+  --tw-gradient-to: var(--bright-purple);
+}
+
+.to-custom-green {
+  --tw-gradient-to: var(--custom-green);
+}
+
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Montserrat', sans-serif;
+}
+
+.font-montserrat {
+  font-family: 'Montserrat', sans-serif;
+}
+
+.font-inter {
+  font-family: 'Inter', sans-serif;
+}
+
+.font-mono {
+  font-family: 'DM Mono', monospace;
+}

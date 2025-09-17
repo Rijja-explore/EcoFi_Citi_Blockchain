@@ -2,17 +2,31 @@
 import { ethers } from 'ethers';
 
 // Import ABIs from artifacts
-import GreenBondEscrowArtifact from './artifacts/contracts/GreenBondEscrow.sol/GreenBondEscrow.json';
-import BondTokenArtifact from './artifacts/contracts/BondToken.sol/BondToken.json';
-import ImpactOracleArtifact from './artifacts/contracts/ImpactOracle.sol/ImpactOracle.json';
+import GreenBondEscrowArtifact from './Backend/artifacts/contracts/GreenBondEscrow.sol/GreenBondEscrow.json';
+import BondTokenArtifact from './Backend/artifacts/contracts/BondToken.sol/BondToken.json';
+import ImpactOracleArtifact from './Backend/artifacts/contracts/ImpactOracle.sol/ImpactOracle.json';
 
-// Environment variables (fallback to hardcoded values if needed)
-const ESCROW_ADDRESS = process.env.REACT_APP_ESCROW_ADDRESS || '0x5FbDB2315678afecb367f032d93F642f64180aa3';
-const BOND_TOKEN_ADDRESS = process.env.REACT_APP_BOND_TOKEN_ADDRESS || '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512';
-const ORACLE_ADDRESS = process.env.REACT_APP_ORACLE_ADDRESS || '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512';
-const UPDATER_ADDRESS = process.env.REACT_APP_UPDATER_ADDRESS || '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
-const ORACLE_UPDATER_KEY = process.env.REACT_APP_ORACLE_UPDATER_KEY || '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
-const EXPECTED_CHAIN_ID = process.env.REACT_APP_CHAIN_ID ? parseInt(process.env.REACT_APP_CHAIN_ID) : 31337;
+// Environment variables (dynamically loaded each time)
+function getContractAddresses() {
+  const addresses = {
+    escrow: process.env.REACT_APP_ESCROW_ADDRESS || '0x68B1D87F95878fE05B998F19b66F4baba5De1aed',
+    oracle: process.env.REACT_APP_ORACLE_ADDRESS || '0x3Aa5ebB10DC797CAC828524e59A333d0A371443c',
+    updater: process.env.REACT_APP_UPDATER_ADDRESS || '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+    chainId: process.env.REACT_APP_CHAIN_ID ? parseInt(process.env.REACT_APP_CHAIN_ID) : 31337
+  };
+  
+  console.log('🔧 Contract addresses loaded from environment:');
+  console.log(`   Escrow: ${addresses.escrow}`);
+  console.log(`   Oracle: ${addresses.oracle}`);
+  console.log('🔧 Raw environment variables:');
+  console.log(`   REACT_APP_ESCROW_ADDRESS: ${process.env.REACT_APP_ESCROW_ADDRESS}`);
+  console.log(`   REACT_APP_ORACLE_ADDRESS: ${process.env.REACT_APP_ORACLE_ADDRESS}`);
+  
+  return addresses;
+}
+
+// Export this function so components can get fresh addresses
+export { getContractAddresses };
 
 /**
  * Initialize ethers provider and check connection
@@ -42,11 +56,51 @@ export async function initializeProvider() {
     const network = await provider.getNetwork();
     console.log('Connected to chain ID:', network.chainId.toString());
     
+    // Get current contract addresses
+    const addresses = getContractAddresses();
+    
     // Check if we're connected to the expected network
-    const isHardhatLocal = network.chainId === ethers.getBigInt(EXPECTED_CHAIN_ID);
+    const isHardhatLocal = network.chainId === ethers.getBigInt(addresses.chainId);
     
     if (!isHardhatLocal) {
-      console.warn(`Connected to wrong network. Expected chain ID: ${EXPECTED_CHAIN_ID}, Got: ${network.chainId}`);
+      console.warn(`❌ Wrong network! Expected chain ID: ${addresses.chainId}, Got: ${network.chainId}`);
+      console.log('🔧 Attempting to switch to Hardhat network...');
+      
+      // Try to switch to Hardhat network
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: `0x${addresses.chainId.toString(16)}` }],
+        });
+        console.log('✅ Switched to Hardhat network successfully');
+        // Reload the page to refresh with new network
+        window.location.reload();
+      } catch (switchError) {
+        console.log('Network switch failed, trying to add Hardhat network...');
+        // If switching fails, try to add the network
+        try {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: `0x${addresses.chainId.toString(16)}`,
+              chainName: 'Hardhat Local',
+              rpcUrls: ['http://127.0.0.1:8545'],
+              nativeCurrency: {
+                name: 'Ethereum',
+                symbol: 'ETH',
+                decimals: 18
+              }
+            }],
+          });
+          console.log('✅ Added Hardhat network to MetaMask');
+          window.location.reload();
+        } catch (addError) {
+          console.error('❌ Failed to add Hardhat network:', addError);
+          throw new Error(`Please manually switch MetaMask to Hardhat Local network (Chain ID: ${addresses.chainId})`);
+        }
+      }
+    } else {
+      console.log('✅ Connected to correct Hardhat network');
     }
     
     return { provider, isHardhatLocal };
@@ -68,8 +122,12 @@ export async function getSigner(provider) {
       throw new Error('Provider is not initialized');
     }
     
-    // Request accounts access (this will prompt the user if not already connected)
-    const accounts = await provider.send('eth_requestAccounts', []);
+    // Request accounts access using window.ethereum directly
+    if (!window.ethereum) {
+      throw new Error('MetaMask is not installed');
+    }
+    
+    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
     
     if (!accounts || accounts.length === 0) {
       throw new Error('No accounts found. Please check MetaMask and try again.');
@@ -103,10 +161,40 @@ export async function getSigner(provider) {
  */
 export function getContracts(signerOrProvider) {
   try {
+    // Get current addresses dynamically
+    const addresses = getContractAddresses();
+    
+    console.log('🔍 Creating contracts with provider/signer:', signerOrProvider);
+    console.log('🔍 Provider network info:');
+    
+    // Try to get network info if it's a provider
+    if (signerOrProvider.getNetwork) {
+      signerOrProvider.getNetwork().then(network => {
+        console.log('🔍 Provider connected to chain:', network.chainId.toString());
+      }).catch(err => console.log('🔍 Could not get network info:', err.message));
+    }
+    
+    // Create escrow contract first
+    const escrow = new ethers.Contract(addresses.escrow, GreenBondEscrowArtifact.abi, signerOrProvider);
+    
+    // Create oracle contract
+    const oracle = new ethers.Contract(addresses.oracle, ImpactOracleArtifact.abi, signerOrProvider);
+    
+    // For bond token, we need to use an async function in the component to get the address
+    // But for now, use a placeholder that will be updated after fetching the token address
+    const bondTokenAddress = process.env.REACT_APP_BOND_TOKEN_ADDRESS || addresses.escrow; // Temporary placeholder
+    const bondToken = new ethers.Contract(bondTokenAddress, BondTokenArtifact.abi, signerOrProvider);
+    
+    console.log('📋 Contracts initialized with addresses:', {
+      escrow: addresses.escrow,
+      oracle: addresses.oracle,
+      bondToken: bondTokenAddress
+    });
+    
     return {
-      escrow: new ethers.Contract(ESCROW_ADDRESS, GreenBondEscrowArtifact.abi, signerOrProvider),
-      bondToken: new ethers.Contract(BOND_TOKEN_ADDRESS, BondTokenArtifact.abi, signerOrProvider),
-      oracle: new ethers.Contract(ORACLE_ADDRESS, ImpactOracleArtifact.abi, signerOrProvider)
+      escrow,
+      bondToken,
+      oracle
     };
   } catch (error) {
     console.error('Contract initialization failed:', error);
@@ -120,13 +208,15 @@ export function getContracts(signerOrProvider) {
  * @returns {ethers.Wallet|null} Oracle wallet or null if key not available
  */
 export function getOracleWallet(provider) {
-  if (!ORACLE_UPDATER_KEY) {
+  const oracleUpdaterKey = process.env.REACT_APP_ORACLE_UPDATER_KEY || '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
+  
+  if (!oracleUpdaterKey) {
     console.warn('Oracle updater key not found in environment variables');
     return null;
   }
   
   try {
-    return new ethers.Wallet(ORACLE_UPDATER_KEY, provider);
+    return new ethers.Wallet(oracleUpdaterKey, provider);
   } catch (error) {
     console.error('Failed to create oracle wallet:', error);
     return null;
@@ -203,7 +293,8 @@ export function handleContractError(error) {
     
     // Wrong network
     if (error.message.includes('network') && error.message.includes('chain')) {
-      return `Please connect to the Hardhat localhost network (Chain ID: ${EXPECTED_CHAIN_ID})`;
+      const addresses = getContractAddresses();
+      return `Please connect to the Hardhat localhost network (Chain ID: ${addresses.chainId})`;
     }
     
     // MetaMask not installed or locked
@@ -309,12 +400,7 @@ export async function pushImpactData(signer, deltaKwh, deltaCO2) {
   }
 }
 
-export const CONTRACT_ADDRESSES = {
-  ESCROW_ADDRESS,
-  BOND_TOKEN_ADDRESS,
-  ORACLE_ADDRESS,
-  UPDATER_ADDRESS
-};
+export const CONTRACT_ADDRESSES = getContractAddresses();
 
 const contractUtils = {
   initializeProvider,
@@ -325,6 +411,7 @@ const contractUtils = {
   formatMilestones,
   handleContractError,
   pushImpactData,
+  getContractAddresses,
   CONTRACT_ADDRESSES
 };
 

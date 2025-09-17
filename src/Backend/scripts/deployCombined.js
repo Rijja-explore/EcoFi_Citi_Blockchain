@@ -81,6 +81,7 @@
 // scripts/deployCombined.js
 import hre from "hardhat";
 import fs from "fs";
+import path from "path";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -146,32 +147,29 @@ async function main() {
   await (await bondToken.setMinter(escrow.target)).wait();
   console.log("✅ BondToken minter set to escrow");
 
-  // --- Write to .env file ---
-  const envFilePath = ".env";
-  const currentEnv = fs.existsSync(envFilePath)
-    ? fs.readFileSync(envFilePath, "utf-8").split("\n")
-    : [];
 
-  // Filter out old values for these keys
-  const filteredEnv = currentEnv.filter(
-    (line) =>
-      !line.startsWith("ESCROW_ADDRESS=") &&
-      !line.startsWith("ORACLE_ADDRESS=") &&
-      !line.startsWith("UPDATER_ADDRESS=")
-  );
-
-  // Add new values
-  filteredEnv.push(`ESCROW_ADDRESS=${escrow.target}`);
-  filteredEnv.push(`ORACLE_ADDRESS=${impactOracle.target}`);
-  filteredEnv.push(`UPDATER_ADDRESS=${oracleUpdater.address}`);
-
-  // Optionally add updater private key if available
-  if (process.env.ORACLE_UPDATER_KEY) {
-    filteredEnv.push(`ORACLE_UPDATER_KEY=${process.env.ORACLE_UPDATER_KEY}`);
-  }
-
-  fs.writeFileSync(envFilePath, filteredEnv.join("\n"));
-  console.log("\n📝 .env file updated successfully!");
+  // --- Write to single .env file in project root ---
+  const projectRoot = path.resolve(process.cwd(), '../../');
+  const envFilePath = path.join(projectRoot, '.env');
+  const envVars = [
+    `ESCROW_ADDRESS=${escrow.target}`,
+    `ORACLE_ADDRESS=${impactOracle.target}`,
+    `UPDATER_ADDRESS=${oracleUpdater.address}`,
+    `ISSUER_ADDRESS=${issuer}`,
+    `ORACLE_UPDATER_KEY=${process.env.ORACLE_UPDATER_KEY || ''}`,
+    `CHAIN_ID=31337`,
+    `RPC_URL=http://127.0.0.1:8545`,
+    // React frontend compatibility
+    `REACT_APP_ESCROW_ADDRESS=${escrow.target}`,
+    `REACT_APP_ORACLE_ADDRESS=${impactOracle.target}`,
+    `REACT_APP_UPDATER_ADDRESS=${oracleUpdater.address}`,
+    `REACT_APP_ISSUER_ADDRESS=${issuer}`,
+    `REACT_APP_ORACLE_UPDATER_KEY=${process.env.ORACLE_UPDATER_KEY || ''}`,
+    `REACT_APP_CHAIN_ID=31337`,
+    `REACT_APP_RPC_URL=http://127.0.0.1:8545`
+  ];
+  fs.writeFileSync(envFilePath, envVars.join('\n'));
+  console.log(`\n📝 .env file updated at project root: ${envFilePath}`);
   console.log("You can now run: npm run oracle:fund && npm run oracle:loop");
 
   console.log("\n🎉 DEPLOYMENT COMPLETE!");
