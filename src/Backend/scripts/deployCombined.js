@@ -105,9 +105,10 @@ async function main() {
   const saleStart = now + 60;      // starts in 1 min
   const saleEnd = now + 3600;      // ends in 1 hour
 
-  // Example metric thresholds & release bps (must sum to 10000)
-  const thresholds = [5000, 10000, 20000];
-  const bps = [3000, 3000, 4000];
+  // Milestone thresholds & release bps (must sum to 10000)
+  // Mega-scale renewable energy project milestones for large solar/wind farms
+  const thresholds = [500000, 1000000, 2000000]; // 500k, 1M, 2M kWh milestones
+  const bps = [3000, 3000, 4000]; // 30%, 30%, 40% fund releases
 
   console.log("📦 Deploying GreenBondEscrow...");
   const GreenBondEscrow = await hre.ethers.getContractFactory("GreenBondEscrow");

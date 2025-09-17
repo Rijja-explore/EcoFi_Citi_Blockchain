@@ -8,11 +8,25 @@ import ImpactOracleArtifact from './Backend/artifacts/contracts/ImpactOracle.sol
 
 // Environment variables (dynamically loaded each time)
 function getContractAddresses() {
+  // Validate required environment variables
+  if (!process.env.REACT_APP_ESCROW_ADDRESS) {
+    throw new Error('REACT_APP_ESCROW_ADDRESS environment variable is required');
+  }
+  if (!process.env.REACT_APP_ORACLE_ADDRESS) {
+    throw new Error('REACT_APP_ORACLE_ADDRESS environment variable is required');
+  }
+  if (!process.env.REACT_APP_UPDATER_ADDRESS) {
+    throw new Error('REACT_APP_UPDATER_ADDRESS environment variable is required');
+  }
+  if (!process.env.REACT_APP_CHAIN_ID) {
+    throw new Error('REACT_APP_CHAIN_ID environment variable is required');
+  }
+
   const addresses = {
-    escrow: process.env.REACT_APP_ESCROW_ADDRESS || '0x68B1D87F95878fE05B998F19b66F4baba5De1aed',
-    oracle: process.env.REACT_APP_ORACLE_ADDRESS || '0x3Aa5ebB10DC797CAC828524e59A333d0A371443c',
-    updater: process.env.REACT_APP_UPDATER_ADDRESS || '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
-    chainId: process.env.REACT_APP_CHAIN_ID ? parseInt(process.env.REACT_APP_CHAIN_ID) : 31337
+    escrow: process.env.REACT_APP_ESCROW_ADDRESS,
+    oracle: process.env.REACT_APP_ORACLE_ADDRESS,
+    updater: process.env.REACT_APP_UPDATER_ADDRESS,
+    chainId: parseInt(process.env.REACT_APP_CHAIN_ID)
   };
   
   console.log('🔧 Contract addresses loaded from environment:');
@@ -208,18 +222,17 @@ export function getContracts(signerOrProvider) {
  * @returns {ethers.Wallet|null} Oracle wallet or null if key not available
  */
 export function getOracleWallet(provider) {
-  const oracleUpdaterKey = process.env.REACT_APP_ORACLE_UPDATER_KEY || '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
+  const oracleUpdaterKey = process.env.REACT_APP_ORACLE_UPDATER_KEY;
   
   if (!oracleUpdaterKey) {
-    console.warn('Oracle updater key not found in environment variables');
-    return null;
+    throw new Error('REACT_APP_ORACLE_UPDATER_KEY environment variable is required for oracle operations');
   }
   
   try {
     return new ethers.Wallet(oracleUpdaterKey, provider);
   } catch (error) {
     console.error('Failed to create oracle wallet:', error);
-    return null;
+    throw new Error('Invalid oracle updater key format');
   }
 }
 

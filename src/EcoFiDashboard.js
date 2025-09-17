@@ -243,7 +243,9 @@ const EcoFiDashboard = () => {
       
       try {
         const kwh = await oracle.cumulativeKwh();
-        setCumulativeKwh(Number(kwh));
+        const kwhValue = Number(kwh);
+        setCumulativeKwh(kwhValue);
+        console.log("Fetched cumulative kWh:", kwhValue);
       } catch (error) {
         console.error("Failed to fetch cumulativeKwh:", error);
       }
@@ -283,15 +285,29 @@ const EcoFiDashboard = () => {
         console.error("Failed to fetch saleEnd:", error);
       }
       
-      // Calculate environmental impact metrics based on kWh
+      // Calculate environmental impact metrics based on kWh using configurable multipliers
       try {
         const kwhValue = cumulativeKwh; // Use state variable
-        setEnvironmentalImpact({
-          co2Reduced: Math.round(kwhValue * 0.4), // kg CO2 saved (0.4kg per kWh)
-          treesPlanted: Math.round(kwhValue * 0.02), // trees equivalent (1 tree = ~50 kWh)
-          energySaved: kwhValue, // kWh saved
-          waterConserved: Math.round(kwhValue * 0.5) // liters of water conserved
-        });
+        console.log("Calculating environmental impact with kWh:", kwhValue);
+        
+        // Get environmental multipliers from environment variables with sensible defaults
+        const co2PerKwh = parseFloat(process.env.REACT_APP_CO2_PER_KWH) || 0.4;
+        const treesPerKwh = parseFloat(process.env.REACT_APP_TREES_PER_KWH) || 0.02;
+        const waterPerKwh = parseFloat(process.env.REACT_APP_WATER_PER_KWH) || 0.5;
+        
+        // If no real data from oracle, show demo data for better UX
+        const showDemoData = process.env.REACT_APP_SHOW_DEMO_DATA === 'true' && kwhValue === 0;
+        const displayKwh = showDemoData ? 250000 : kwhValue; // Demo: 250k kWh
+        
+        const impactData = {
+          co2Reduced: Math.round(displayKwh * co2PerKwh), // kg CO2 saved
+          treesPlanted: Math.round(displayKwh * treesPerKwh), // trees equivalent
+          energySaved: displayKwh, // kWh saved
+          waterConserved: Math.round(displayKwh * waterPerKwh) // liters of water conserved
+        };
+        
+        console.log("Environmental impact calculated:", impactData);
+        setEnvironmentalImpact(impactData);
       } catch (error) {
         console.error("Failed to calculate environmental impact:", error);
       }
@@ -442,6 +458,125 @@ const EcoFiDashboard = () => {
     }
   };
 
+  // Download impact certificate as PDF
+  const handleDownloadCertificate = () => {
+    const certificateData = {
+      certificateId: `ECO-${walletAddress.substring(2, 8).toUpperCase()}`,
+      bondBalance: bondBalance,
+      impactContribution: `${environmentalImpact.co2Reduced} kg CO₂`,
+      energyGenerated: `${environmentalImpact.energySaved} kWh`,
+      treesEquivalent: environmentalImpact.treesPlanted,
+      waterConserved: `${environmentalImpact.waterConserved} L`,
+      issueDate: new Date().toLocaleDateString(),
+      walletAddress: walletAddress
+    };
+
+    // Create HTML content for PDF
+    const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>EcoFi Impact Certificate</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f0f9ff; }
+        .certificate { background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); max-width: 800px; margin: 0 auto; }
+        .header { text-align: center; border-bottom: 3px solid #8b5cf6; padding-bottom: 20px; margin-bottom: 30px; }
+        .title { color: #8b5cf6; font-size: 28px; font-weight: bold; margin-bottom: 10px; }
+        .subtitle { color: #6b7280; font-size: 16px; }
+        .section { margin: 25px 0; }
+        .section-title { color: #374151; font-size: 18px; font-weight: bold; margin-bottom: 15px; border-left: 4px solid #8b5cf6; padding-left: 15px; }
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .info-item { background: #f8fafc; padding: 15px; border-radius: 8px; border-left: 3px solid #10b981; }
+        .info-label { color: #6b7280; font-size: 12px; margin-bottom: 5px; text-transform: uppercase; }
+        .info-value { color: #1f2937; font-size: 16px; font-weight: bold; }
+        .impact-highlight { background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 20px; border-radius: 10px; text-align: center; }
+        .footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="certificate">
+        <div class="header">
+            <div class="title">🌱 EcoFi Green Bond Impact Certificate</div>
+            <div class="subtitle">Environmental Sustainability Validation</div>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">Certificate Details</div>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">Certificate ID</div>
+                    <div class="info-value">${certificateData.certificateId}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Issue Date</div>
+                    <div class="info-value">${certificateData.issueDate}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Investor Information</div>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">Wallet Address</div>
+                    <div class="info-value">${certificateData.walletAddress}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Bond Balance</div>
+                    <div class="info-value">${certificateData.bondBalance} GBOND</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Environmental Impact Contribution</div>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">🌍 CO₂ Reduced</div>
+                    <div class="info-value">${certificateData.impactContribution}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">⚡ Energy Generated</div>
+                    <div class="info-value">${certificateData.energyGenerated}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">🌳 Trees Equivalent</div>
+                    <div class="info-value">${certificateData.treesEquivalent} trees</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">💧 Water Conserved</div>
+                    <div class="info-value">${certificateData.waterConserved}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="impact-highlight">
+            <strong>This certificate validates your contribution to environmental sustainability through green bond investments.</strong>
+        </div>
+
+        <div class="footer">
+            Generated by EcoFi Platform • ${new Date().toISOString()}<br>
+            Blockchain-verified environmental impact tracking
+        </div>
+    </div>
+</body>
+</html>`;
+
+    // Create a new window to print as PDF
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    
+    // Wait for content to load then trigger print dialog
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 500);
+    
+    showToast('Certificate ready for download as PDF!', 'success');
+  };
+
   // UI Components
 
   // Network Status indicator
@@ -547,11 +682,13 @@ const EcoFiDashboard = () => {
       // Calculate tokens
       const tokens = (amount / price).toFixed(2);
       
-      // Calculate impact (simplified)
-      const impact = Math.round((amount * 10) / price); // kWh per ETH invested
+      // Calculate impact using configurable multiplier
+      const impactMultiplier = parseFloat(process.env.REACT_APP_IMPACT_MULTIPLIER) || 1000; // kWh per ETH invested
+      const impact = Math.round((amount * impactMultiplier) / price);
       
-      // Calculate potential returns (simplified)
-      const returns = (amount * 0.12).toFixed(4); // 12% return
+      // Calculate potential returns using configurable rate
+      const returnRate = parseFloat(process.env.REACT_APP_EXPECTED_RETURN_RATE) || 0.12;
+      const returns = (amount * returnRate).toFixed(4);
       
       setSimResults({
         tokens,
@@ -589,7 +726,7 @@ const EcoFiDashboard = () => {
           <div className="bg-gray-800/50 p-3 rounded-lg">
             <div className="text-gray-400 text-xs">Est. Environmental Impact</div>
             <div className="text-white text-lg font-semibold">{simResults.impact} kWh</div>
-            <div className="text-gray-400 text-xs">≈ {Math.round(simResults.impact * 0.4)} kg CO₂ reduced</div>
+            <div className="text-gray-400 text-xs">≈ {Math.round(simResults.impact * (parseFloat(process.env.REACT_APP_CO2_PER_KWH) || 0.4))} kg CO₂ reduced</div>
           </div>
           
           <div className="bg-gray-800/50 p-3 rounded-lg">
@@ -721,66 +858,151 @@ const EcoFiDashboard = () => {
     </div>
   );
 
-  // Oracle Simulator (for issuer only)
+  // Enhanced Oracle Simulator (for issuer only)
   const OracleSimulator = () => (
-    <div className="glass-card p-4 rounded-xl">
-      <h3 className="text-white text-lg font-semibold mb-3">Impact Data Simulator</h3>
-      <p className="text-gray-400 text-sm mb-4">
-        Push new impact data to the oracle to simulate project progress. This will trigger milestone releases when thresholds are met.
-      </p>
-      
-      <div className="space-y-3">
+    <div className="glass-card p-6 rounded-xl border border-purple-500/20">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="p-2 bg-gradient-to-r from-custom-purple to-bright-purple rounded-lg">
+          <Database className="w-5 h-5 text-white" />
+        </div>
         <div>
-          <label className="block text-gray-400 text-sm mb-1">New kWh Generated</label>
+          <h3 className="text-white text-lg font-semibold">Submit Environmental Impact Data</h3>
+          <p className="text-gray-400 text-sm">Report your project's environmental achievements to unlock milestone funding</p>
+        </div>
+      </div>
+      
+      {/* Current Progress Display */}
+      <div className="bg-gray-800/50 rounded-lg p-4 mb-6">
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-gray-300 text-sm">Current Progress</span>
+          <span className="text-green-400 text-sm font-semibold">{cumulativeKwh.toLocaleString()} kWh Total</span>
+        </div>
+        <div className="flex gap-4 text-xs text-gray-400">
+          <span>Next Milestone: {milestones.find(m => !m.achieved)?.threshold?.toLocaleString() || 'All Complete'} kWh</span>
+          <span>•</span>
+          <span>Remaining: {milestones.find(m => !m.achieved) ? (milestones.find(m => !m.achieved).threshold - cumulativeKwh).toLocaleString() : 0} kWh</span>
+        </div>
+      </div>
+      
+      <div className="space-y-4 mb-6">
+        {/* Energy Generation Input */}
+        <div>
+          <label className="block text-white text-sm font-medium mb-2">
+            Energy Generated (kWh)
+          </label>
           <input
-            type="number"
+            type="text"
             value={deltaKwh}
             onChange={(e) => setDeltaKwh(e.target.value)}
-            className="w-full bg-gray-900/50 border border-gray-700 rounded-lg px-4 py-2 text-white"
-            placeholder="e.g. 1000"
+            className="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:border-purple-500 focus:outline-none"
+            placeholder="Enter kWh generated (e.g., 25000)"
           />
         </div>
         
+        {/* CO2 Offset Input */}
         <div>
-          <label className="block text-gray-400 text-sm mb-1">CO₂ Offset (kg)</label>
+          <label className="block text-white text-sm font-medium mb-2">
+            CO₂ Offset (kg)
+          </label>
           <input
-            type="number"
+            type="text"
             value={deltaCO2}
             onChange={(e) => setDeltaCO2(e.target.value)}
-            className="w-full bg-gray-900/50 border border-gray-700 rounded-lg px-4 py-2 text-white"
-            placeholder="e.g. 400"
+            className="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:border-purple-500 focus:outline-none"
+            placeholder="Enter CO₂ offset (e.g., 10000)"
           />
         </div>
-        
-        <div>
-          <label className="block text-gray-400 text-sm mb-1">Oracle Private Key (optional)</label>
+      </div>
+      
+      {/* Quick Fill Buttons */}
+      <div className="mb-6">
+        <div className="text-white text-sm font-medium mb-2">Quick Fill Options:</div>
+        <div className="flex flex-wrap gap-2">
+          {[
+            { label: "Small Update", kwh: 100000, co2: 40000 },
+            { label: "Medium Update", kwh: 300000, co2: 120000 },
+            { label: "Large Update", kwh: 600000, co2: 240000 },
+            { label: "Milestone Push", kwh: 1000000, co2: 400000 }
+          ].map((preset) => (
+            <button
+              key={preset.label}
+              onClick={() => {
+                setDeltaKwh(preset.kwh.toString());
+                setDeltaCO2(preset.co2.toString());
+              }}
+              className="px-3 py-1 bg-gray-700/50 hover:bg-gray-600/50 text-gray-300 text-xs rounded-lg transition-colors"
+            >
+              {preset.label} ({preset.kwh.toLocaleString()} kWh)
+            </button>
+          ))}
+        </div>
+      </div>
+      
+      {/* Impact Preview */}
+      {deltaKwh && deltaCO2 && (
+        <div className="bg-gradient-to-r from-purple-900/30 to-green-900/30 rounded-lg p-4 mb-6 border border-purple-500/20">
+          <div className="text-white text-sm font-medium mb-2">Impact Preview:</div>
+          <div className="grid grid-cols-2 gap-4 text-xs">
+            <div>
+              <span className="text-gray-400">New Total: </span>
+              <span className="text-white font-semibold">{(cumulativeKwh + parseInt(deltaKwh || 0)).toLocaleString()} kWh</span>
+            </div>
+            <div>
+              <span className="text-gray-400">Trees Equivalent: </span>
+              <span className="text-green-400 font-semibold">
+                +{Math.round(parseFloat(deltaKwh) * (parseFloat(process.env.REACT_APP_TREES_PER_KWH) || 0.02))} trees
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Oracle Key (Collapsible Advanced Section) */}
+      <details className="mb-6">
+        <summary className="text-gray-400 text-sm cursor-pointer hover:text-white transition-colors">
+          ⚙️ Advanced: Custom Oracle Key
+        </summary>
+        <div className="mt-3 space-y-2">
           <input
             type="password"
             value={oracleKey}
             onChange={(e) => setOracleKey(e.target.value)}
-            className="w-full bg-gray-900/50 border border-gray-700 rounded-lg px-4 py-2 text-white"
-            placeholder="Using default key if empty"
+            className="w-full bg-gray-900/70 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
+            placeholder="Leave empty to use environment key"
           />
-          <p className="text-gray-500 text-xs mt-1">
-            Leave empty to use the key from environment variables
+          <p className="text-gray-500 text-xs">
+            🔐 Only use custom keys for testing. Production uses secure environment variables.
           </p>
         </div>
-        
-        <button
-          onClick={handlePushImpactData}
-          disabled={loading || !deltaKwh || !deltaCO2}
-          className="w-full bg-gradient-to-r from-custom-purple to-bright-purple text-white px-4 py-2 rounded-lg font-semibold disabled:opacity-50"
-        >
-          {loading ? (
-            <span className="flex items-center justify-center gap-2">
-              <RefreshCw className="w-4 h-4 animate-spin" />
-              Processing...
-            </span>
-          ) : (
-            'Push Impact Data'
-          )}
-        </button>
-      </div>
+      </details>
+      
+      {/* Submit Button */}
+      <button
+        onClick={handlePushImpactData}
+        disabled={loading || !deltaKwh || !deltaCO2}
+        className="w-full bg-gradient-to-r from-custom-purple to-bright-purple hover:from-purple-600 hover:to-purple-700 text-white px-6 py-4 rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg"
+      >
+        {loading ? (
+          <span className="flex items-center justify-center gap-3">
+            <RefreshCw className="w-5 h-5 animate-spin" />
+            Submitting Impact Data...
+          </span>
+        ) : (
+          <span className="flex items-center justify-center gap-3">
+            <CheckCircle2 className="w-5 h-5" />
+            Submit Environmental Impact Data
+          </span>
+        )}
+      </button>
+      
+      {/* Form Validation Messages */}
+      {(!deltaKwh || !deltaCO2) && (
+        <div className="mt-3 text-center">
+          <span className="text-amber-400 text-xs">
+            ⚠️ Please enter both energy generation and CO₂ offset values
+          </span>
+        </div>
+      )}
     </div>
   );
 
@@ -886,36 +1108,34 @@ const EcoFiDashboard = () => {
     </div>
   );
 
-  // Sample project data
-  const projectsData = [
-    {
-      id: 1,
-      name: "Solar Farm Alpha",
-      image: "https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80",
-      location: "California, USA",
-      description: "Large-scale solar farm generating clean energy for over 10,000 homes.",
-      impact: "15,000 tons CO2 reduction",
-      progress: 75
-    },
-    {
-      id: 2,
-      name: "Wind Energy Project",
-      image: "https://images.unsplash.com/photo-1548337138-e87d889cc369?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2074&q=80",
-      location: "Scotland, UK",
-      description: "Offshore wind farm with 50 turbines providing renewable energy.",
-      impact: "20,000 tons CO2 reduction",
-      progress: 60
-    },
-    {
-      id: 3,
-      name: "Hydro Power Initiative",
-      image: "https://images.unsplash.com/photo-1566841911190-83ddc8f5cf3f?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80",
-      location: "British Columbia, Canada",
-      description: "Sustainable hydroelectric power project with minimal environmental impact.",
-      impact: "12,500 tons CO2 reduction",
-      progress: 90
+  // Get projects data from environment variables or use dynamic placeholders
+  const getProjectsData = () => {
+    // Try to get projects from environment variables
+    const projectsConfig = process.env.REACT_APP_PROJECTS_CONFIG;
+    
+    if (projectsConfig) {
+      try {
+        return JSON.parse(projectsConfig);
+      } catch (error) {
+        console.warn('Failed to parse REACT_APP_PROJECTS_CONFIG:', error);
+      }
     }
-  ];
+    
+    // Fallback to dynamic project data based on contract info
+    return [
+      {
+        id: 1,
+        name: process.env.REACT_APP_PROJECT_1_NAME || "Green Bond Project",
+        image: process.env.REACT_APP_PROJECT_1_IMAGE || "/placeholder-project.jpg",
+        location: process.env.REACT_APP_PROJECT_1_LOCATION || "Location TBD",
+        description: process.env.REACT_APP_PROJECT_1_DESCRIPTION || "Renewable energy project generating clean energy.",
+        impact: `${Math.floor(cumulativeKwh * (parseFloat(process.env.REACT_APP_CO2_PER_KWH) || 0.4))} kg CO2 reduction`,
+        progress: Math.min(100, Math.floor((parseFloat(totalRaised) / parseFloat(capTokens) * parseFloat(tokenPrice)) * 100))
+      }
+    ];
+  };
+
+  const projectsData = getProjectsData();
 
   // Projects component
   const Projects = () => (
@@ -1146,7 +1366,10 @@ const EcoFiDashboard = () => {
                       </div>
                     </div>
                     
-                    <button className="w-full bg-gradient-to-r from-custom-purple to-bright-purple text-white px-4 py-2 rounded-lg font-semibold">
+                    <button 
+                      onClick={handleDownloadCertificate}
+                      className="w-full bg-gradient-to-r from-custom-purple to-bright-purple hover:from-purple-600 hover:to-purple-700 text-white px-4 py-2 rounded-lg font-semibold transition-all"
+                    >
                       Download Impact Certificate
                     </button>
                   </div>
