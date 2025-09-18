@@ -106,11 +106,16 @@ async function main() {
   const saleEnd = now + 3600;      // ends in 1 hour
 
   // Milestone thresholds & release bps (must sum to 10000)
-  // Mega-scale renewable energy project milestones for large solar/wind farms
-  const thresholds = [500000, 1000000, 2000000]; // 500k, 1M, 2M kWh milestones
-  const bps = [3000, 3000, 4000]; // 30%, 30%, 40% fund releases
+  // Enterprise-scale renewable energy project milestones for massive solar/wind farms
+  const thresholds = [5000000, 10000000, 20000000, 35000000, 50000000, 75000000]; // 5M, 10M, 20M, 35M, 50M, 75M kWh milestones
+  const bps = [1666, 1667, 1667, 1667, 1666, 1667]; // ~16.67% each, sum = 10000
 
-  console.log("📦 Deploying GreenBondEscrow...");
+  console.log("� Deployment parameters:");
+  console.log("   Thresholds:", thresholds);
+  console.log("   BPS:", bps);
+  console.log("   BPS Sum:", bps.reduce((a, b) => a + b, 0));
+
+  console.log("�📦 Deploying GreenBondEscrow...");
   const GreenBondEscrow = await hre.ethers.getContractFactory("GreenBondEscrow");
   const escrow = await GreenBondEscrow.deploy(
     issuer,

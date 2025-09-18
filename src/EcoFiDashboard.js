@@ -297,7 +297,7 @@ const EcoFiDashboard = () => {
         
         // If no real data from oracle, show demo data for better UX
         const showDemoData = process.env.REACT_APP_SHOW_DEMO_DATA === 'true' && kwhValue === 0;
-        const displayKwh = showDemoData ? 250000 : kwhValue; // Demo: 250k kWh
+        const displayKwh = showDemoData ? 2500000 : kwhValue; // Demo: 2.5M kWh
         
         const impactData = {
           co2Reduced: Math.round(displayKwh * co2PerKwh), // kg CO2 saved
@@ -441,10 +441,14 @@ const EcoFiDashboard = () => {
       
       showToast('Impact data updated successfully', 'success');
       
-      // Reset form and refresh data
+      // Reset form and refresh data after a short delay to ensure transaction is confirmed
       setDeltaKwh('');
       setDeltaCO2('');
-      fetchContractData(provider, walletAddress);
+      
+      // Wait a moment for transaction to be mined, then refresh
+      setTimeout(() => {
+        fetchContractData(provider, walletAddress);
+      }, 2000);
     } catch (error) {
       console.error('Push impact data failed:', error);
       setTransactionHistory(prev => [...prev, { 
@@ -707,13 +711,12 @@ const EcoFiDashboard = () => {
         <div className="mb-4">
           <label className="block text-gray-400 text-sm mb-1">Investment Amount (ETH)</label>
           <input
-            type="number"
+            type="text"
             value={simAmount}
             onChange={(e) => setSimAmount(e.target.value)}
             onBlur={calculateInvestment}
-            className="w-full bg-gray-900/50 border border-gray-700 rounded-lg px-4 py-2 text-white"
-            min="0.01"
-            step="0.01"
+            className="w-full p-3 bg-white/10 backdrop-blur-sm text-white border border-white/20 rounded-xl text-lg placeholder-white/60 focus:border-white/40 focus:bg-white/15 focus:outline-none transition-all duration-300"
+            placeholder="0.01"
           />
         </div>
         
@@ -894,8 +897,8 @@ const EcoFiDashboard = () => {
             type="text"
             value={deltaKwh}
             onChange={(e) => setDeltaKwh(e.target.value)}
-            className="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:border-purple-500 focus:outline-none"
-            placeholder="Enter kWh generated (e.g., 25000)"
+            className="w-full p-3 bg-white/10 backdrop-blur-sm text-white border border-white/20 rounded-xl text-lg placeholder-white/60 focus:border-white/40 focus:bg-white/15 focus:outline-none transition-all duration-300"
+            placeholder="Enter kWh generated (e.g., 1000000)"
           />
         </div>
         
@@ -908,8 +911,8 @@ const EcoFiDashboard = () => {
             type="text"
             value={deltaCO2}
             onChange={(e) => setDeltaCO2(e.target.value)}
-            className="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:border-purple-500 focus:outline-none"
-            placeholder="Enter CO₂ offset (e.g., 10000)"
+            className="w-full p-3 bg-white/10 backdrop-blur-sm text-white border border-white/20 rounded-xl text-lg placeholder-white/60 focus:border-white/40 focus:bg-white/15 focus:outline-none transition-all duration-300"
+            placeholder="Enter CO₂ offset (e.g., 400000)"
           />
         </div>
       </div>
@@ -919,10 +922,12 @@ const EcoFiDashboard = () => {
         <div className="text-white text-sm font-medium mb-2">Quick Fill Options:</div>
         <div className="flex flex-wrap gap-2">
           {[
-            { label: "Small Update", kwh: 100000, co2: 40000 },
-            { label: "Medium Update", kwh: 300000, co2: 120000 },
-            { label: "Large Update", kwh: 600000, co2: 240000 },
-            { label: "Milestone Push", kwh: 1000000, co2: 400000 }
+            { label: "Small Update", kwh: 1000000, co2: 400000 },
+            { label: "Medium Update", kwh: 2500000, co2: 1000000 },
+            { label: "Large Update", kwh: 5000000, co2: 2000000 },
+            { label: "Milestone Push", kwh: 10000000, co2: 4000000 },
+            { label: "Major Push", kwh: 15000000, co2: 6000000 },
+            { label: "Mega Push", kwh: 25000000, co2: 10000000 }
           ].map((preset) => (
             <button
               key={preset.label}
@@ -1057,13 +1062,11 @@ const EcoFiDashboard = () => {
         <div className="mb-6">
           <label className="block text-gray-400 text-sm mb-2">Amount to Invest (ETH)</label>
           <input
-            type="number"
+            type="text"
             value={tokenAmount}
             onChange={(e) => setTokenAmount(e.target.value)}
-            className="w-full bg-gray-900/50 border border-gray-700 rounded-lg px-4 py-3 text-white text-lg"
+            className="w-full p-3 bg-white/10 backdrop-blur-sm text-white border border-white/20 rounded-xl text-lg placeholder-white/60 focus:border-white/40 focus:bg-white/15 focus:outline-none transition-all duration-300"
             placeholder="0.0"
-            min="0.01"
-            step="0.01"
           />
           
           <div className="flex justify-between mt-2 text-sm">

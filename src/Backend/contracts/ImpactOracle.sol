@@ -21,7 +21,7 @@ contract ImpactOracle is Ownable {
     constructor(address _owner) Ownable(_owner) {}
 
     modifier onlyUpdater() {
-        require(msg.sender == updater, "not updater");
+        require(msg.sender == updater || msg.sender == owner(), "not authorized");
         _;
     }
 
