@@ -263,6 +263,11 @@ export function formatMilestones(milestones) {
 export function handleContractError(error) {
   console.error('Contract error:', error);
   
+  // Handle MetaMask specific errors first
+  if (error.code === "ACTION_REJECTED") {
+    return 'Transaction was cancelled in MetaMask';
+  }
+  
   // Extract reason from error
   if (error.reason) {
     return `Transaction failed: ${error.reason}`;
@@ -271,13 +276,21 @@ export function handleContractError(error) {
   // Check for common error messages
   if (error.message) {
     // User rejected the transaction
-    if (error.message.includes('user rejected') || error.message.includes('User denied')) {
-      return 'Transaction was rejected in MetaMask';
+    if (error.message.includes('user rejected') || 
+        error.message.includes('User denied') || 
+        error.message.includes('transaction failed')) {
+      return 'Transaction was rejected or failed in MetaMask';
     }
     
     // Insufficient funds
     if (error.message.includes('insufficient funds')) {
       return 'Insufficient ETH for this transaction. Please add funds to your wallet.';
+    }
+    
+    // Nonce errors
+    if (error.message.includes('nonce') || 
+        error.message.includes('replacement fee too low')) {
+      return 'Transaction nonce error. Please try again or reset your MetaMask account.';
     }
     
     // Execution reverted
@@ -332,6 +345,15 @@ export function handleContractError(error) {
       return 'Transaction failed due to gas estimation. The transaction might revert.';
     }
   }
+  
+  // Log detailed error for debugging
+  console.log('Detailed error information:', {
+    code: error.code,
+    message: error.message,
+    data: error.data,
+    transaction: error.transaction?.hash,
+    reason: error.reason
+  });
   
   // Default error message
   return 'Transaction failed. Please check the console for more details.';

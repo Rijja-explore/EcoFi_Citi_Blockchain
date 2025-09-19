@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ethers } from 'ethers';
 import {
   Wallet, CheckCircle, AlertTriangle, RefreshCw, Lock,
@@ -120,7 +120,7 @@ const InvestModal = ({ project, onClose, onInvest, loading }) => {
   }, [investAmount, project]);
 
   const handleInvestClick = async () => {
-    if (!investAmount) return;
+    if (!investAmount || loading) return;
     await onInvest(investAmount);
     setInvestAmount('');
   };
@@ -146,6 +146,9 @@ const InvestModal = ({ project, onClose, onInvest, loading }) => {
             <div className="text-white font-medium">{project.description}</div>
             <div className="text-green-400 text-sm mt-2">
               Target: {project.targetAmount ? ethers.formatEther(project.targetAmount) : '0'} ETH
+            </div>
+            <div className="text-blue-400 text-sm mt-1">
+              Contract: {project.escrowContract?.substring(0, 10)}...
             </div>
           </div>
 
@@ -176,7 +179,13 @@ const InvestModal = ({ project, onClose, onInvest, loading }) => {
               Cancel
             </button>
             <button
-              onClick={handleInvestClick}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!loading && investAmount) {
+                  handleInvestClick();
+                }
+              }}
               disabled={!investAmount || loading}
               className="flex-1 bg-gradient-to-r from-green-500 to-blue-500 text-white px-4 py-3 rounded-lg hover:from-green-600 hover:to-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300"
             >
@@ -630,6 +639,15 @@ const OracleSimulator = ({ project, onClose, onUpdate, loading, allProjects = []
 };
 
 const EcoFiDashboard = () => {
+  // Refs to prevent multiple simultaneous blockchain transactions
+  const investmentInProgress = useRef(false);
+  const releaseFundsInProgress = useRef(false);
+  const buyBondsInProgress = useRef(false);
+  const createProjectInProgress = useRef(false);
+  const oracleUpdateInProgress = useRef(false);
+  const lastTransactionTime = useRef(0);
+  const investButtonRef = useRef(null);
+  
   // State for wallet connection
   const [walletConnected, setWalletConnected] = useState(false);
   const [walletAddress, setWalletAddress] = useState('');
@@ -698,6 +716,18 @@ const EcoFiDashboard = () => {
   });
   const [notifications, setNotifications] = useState([]);
   const [walletBalance, setWalletBalance] = useState('0');
+
+  // Custom project selection function that also loads milestones
+  const selectProject = async (project) => {
+    setSelectedProject(project);
+    if (project) {
+      await loadMilestones(project);
+      await checkCurrentProjectIssuer(project);
+    } else {
+      setMilestones([]);
+      setIsCurrentProjectIssuer(false);
+    }
+  };
 
   // Check if Hardhat is running when component mounts
   useEffect(() => {
@@ -951,11 +981,11 @@ const EcoFiDashboard = () => {
       // Set first project as selected if none selected
       if (projectsData.length > 0 && !selectedProject) {
         const firstProject = projectsData[0];
-        setSelectedProject(firstProject);
-        if (walletAddress) {
-          checkCurrentProjectIssuer(firstProject);
-        }
+        await selectProject(firstProject);
       }
+      
+      // Return the projects data for immediate use
+      return projectsData;
     } catch (error) {
       console.error('Failed to load projects:', error);
       console.error('Error details:', {
@@ -988,7 +1018,53 @@ const EcoFiDashboard = () => {
     }
   };
 
+  // Helper function to check if current user is issuer of ANY project
+  const checkIfUserIsIssuer = async (projects, userAddress, providerInstance) => {
+    console.log("Checking issuer status:", { projects: projects?.length, userAddress, hasProvider: !!providerInstance });
+    
+    if (!projects || projects.length === 0 || !userAddress || !providerInstance) {
+      console.log("Setting isIssuer to false - missing requirements");
+      setIsIssuer(false);
+      return;
+    }
+
+    try {
+      let foundIssuer = false;
+      for (const project of projects) {
+        const escrowContract = new ethers.Contract(
+          project.escrowContract,
+          GreenBondEscrowArtifact.abi,
+          providerInstance
+        );
+        const issuerAddr = await escrowContract.issuer();
+        console.log(`Project ${project.projectName}: issuer=${issuerAddr}, user=${userAddress}`);
+        if (issuerAddr.toLowerCase() === userAddress.toLowerCase()) {
+          console.log("Found user as issuer!");
+          foundIssuer = true;
+          setIsIssuer(true);
+          return; // Found at least one project where user is issuer
+        }
+      }
+      // If we get here, user is not issuer of any project
+      console.log("User is not issuer of any project");
+      setIsIssuer(false);
+    } catch (error) {
+      console.error("Failed to check general issuer status:", error);
+      setIsIssuer(false);
+    }
+  };
+
   const createProject = async () => {
+    // Prevent multiple simultaneous calls
+    if (loading || createProjectInProgress.current) {
+      console.log("Project creation already in progress");
+      return;
+    }
+    
+    // Set protection flags
+    setLoading(true);
+    createProjectInProgress.current = true;
+    
     try {
       if (!signer || !factoryContract) {
         throw new Error('Wallet not connected or factory contract not initialized');
@@ -1085,6 +1161,8 @@ const EcoFiDashboard = () => {
       });
       setShowCreateProject(false);
       await loadAllProjects(factoryContract);
+      // Update issuer status since user just created a project
+      await checkIfUserIsIssuer(allProjects, walletAddress, provider);
       showToast('Project created successfully!', 'success');
       
     } catch (error) {
@@ -1113,6 +1191,9 @@ const EcoFiDashboard = () => {
       }
       
       showToast(errorMessage, 'error');
+    } finally {
+      setLoading(false);
+      createProjectInProgress.current = false; // Reset the protection flag
     }
   };
 
@@ -1143,14 +1224,33 @@ const EcoFiDashboard = () => {
   };
 
   const releaseFunds = async (project, milestoneIndex) => {
+    // Prevent multiple simultaneous calls
+    if (loading || releaseFundsInProgress.current) {
+      console.log("Fund release already in progress");
+      return;
+    }
+    
+    // Set protection flags
+    setLoading(true);
+    releaseFundsInProgress.current = true;
+    
     try {
-      if (!signer) return;
+      if (!signer) {
+        throw new Error('Wallet not connected');
+      }
 
+      console.log("Releasing funds for project:", project?.projectName);
       const escrow = new ethers.Contract(project.escrowContract, GreenBondEscrowArtifact.abi, signer);
       
       // Submit milestone achievement (this will trigger fund release)
       const milestone = project.milestones[milestoneIndex];
-      const tx = await escrow.submitMetric(milestone.threshold);
+      console.log("Submitting metric for milestone threshold:", milestone?.threshold);
+      
+      const tx = await escrow.submitMetric(milestone.threshold, {
+        gasLimit: 300000 // Add gas limit for better reliability
+      });
+      console.log("Transaction sent:", tx.hash);
+      
       await tx.wait();
       
       // Calculate released amount
@@ -1168,9 +1268,20 @@ const EcoFiDashboard = () => {
       await loadAllProjects(factoryContract);
       await updateWalletBalance();
       
+      // Refresh all contract data including milestones, bond balance, token price, and impact metrics
+      await fetchContractData(provider, walletAddress);
+      
+      // Reload milestones for the current project if one is selected
+      if (selectedProject) {
+        await loadMilestones(selectedProject);
+      }
+      
     } catch (error) {
       console.error('Failed to release funds:', error);
       showToast(handleContractError(error), 'error');
+    } finally {
+      setLoading(false);
+      releaseFundsInProgress.current = false; // Reset the protection flag
     }
   };
 
@@ -1243,23 +1354,45 @@ const EcoFiDashboard = () => {
       
       // Load all projects from factory if initialization was successful
       if (factory) {
-        await loadAllProjects(factory);
+        const loadedProjects = await loadAllProjects(factory);
+        // Now check issuer status with the loaded projects
+        if (loadedProjects && loadedProjects.length > 0) {
+          await checkIfUserIsIssuer(loadedProjects, address, providerInstance);
+        }
       } else {
         console.error('Factory contract initialization failed');
         showToast('Failed to connect to contract factory', 'error');
       }
       
-      // Calculate environmental impact (using current cumulative kWh)
-      calculateEnvironmentalImpact(cumulativeKwh);
+      // Fetch cumulative kWh from oracle contract if we have a selected project
+      if (selectedProject && selectedProject.oracleContract) {
+        try {
+          const oracleContract = new ethers.Contract(
+            selectedProject.oracleContract,
+            ImpactOracleArtifact.abi,
+            providerInstance
+          );
+          
+          const kwh = await oracleContract.cumulativeKwh();
+          const kwhValue = Number(ethers.formatEther(kwh)); // Convert from wei to ether (assuming it's stored as wei)
+          setCumulativeKwh(kwhValue);
+          
+          console.log('Updated cumulative kWh:', kwhValue);
+        } catch (error) {
+          console.error('Failed to fetch cumulative kWh from oracle:', error);
+        }
+      }
       
-      // Set general issuer status to true for all connected users (anyone can create projects)
-      setIsIssuer(true);
+      // Calculate environmental impact (using updated cumulative kWh)
+      calculateEnvironmentalImpact(cumulativeKwh);
       
       // Check specific project issuer status (if a project is selected)
       if (selectedProject) {
         await checkCurrentProjectIssuer(selectedProject);
+        await loadMilestones(selectedProject);
       } else {
         setIsCurrentProjectIssuer(false);
+        setMilestones([]);
       }
       
       // Update wallet balance
@@ -1273,15 +1406,72 @@ const EcoFiDashboard = () => {
     }
   };
 
+  // Load milestones for a specific project
+  const loadMilestones = async (project) => {
+    if (!project || !project.escrowContract || !provider) {
+      setMilestones([]);
+      return;
+    }
+
+    try {
+      console.log('Loading milestones for project:', project.id);
+
+      // Create escrow contract instance
+      const escrowContract = new ethers.Contract(
+        project.escrowContract,
+        GreenBondEscrowArtifact.abi,
+        provider
+      );
+
+      // Get milestones count
+      const milestonesCount = await escrowContract.milestonesCount();
+      console.log('Milestones count:', milestonesCount);
+
+      const milestonesData = [];
+
+      // Load each milestone
+      for (let i = 0; i < milestonesCount; i++) {
+        const milestone = await escrowContract.milestones(i);
+        milestonesData.push({
+          index: i,
+          threshold: Number(milestone.threshold),
+          releaseBps: Number(milestone.releaseBps),
+          achieved: milestone.achieved,
+          achievedAt: milestone.achieved ? Number(milestone.achievedAt) : null
+        });
+      }
+
+      console.log('Loaded milestones:', milestonesData);
+      setMilestones(milestonesData);
+    } catch (error) {
+      console.error('Failed to load milestones:', error);
+      setMilestones([]);
+      showToast('Failed to load project milestones', 'error');
+    }
+  };
+
   // Buy bonds
   const buyBonds = async () => {
-    if (!signer || !tokenAmount) {
+    // Prevent multiple simultaneous calls with debouncing
+    const now = Date.now();
+    if (now - lastTransactionTime.current < 2000) { // 2 second debounce
+      console.log('Transaction debounced - too soon after last transaction');
+      return;
+    }
+    
+    if (!signer || !tokenAmount || loading || buyBondsInProgress.current) {
       showToast('Please enter a valid token amount', 'error');
       return;
     }
+    
+    // Set protection flags
     setLoading(true);
+    buyBondsInProgress.current = true;
+    lastTransactionTime.current = now;
     
     try {
+      console.log("Buy bonds initiated with amount:", tokenAmount);
+      
       // Get escrow contract with signer
       const { escrow } = getContracts(signer);
       
@@ -1290,13 +1480,19 @@ const EcoFiDashboard = () => {
       const price = await escrow.priceWeiPerToken();
       const cost = (amount * price) / (10n**18n);
       
-      // Send transaction
-      const tx = await escrow.invest(amount, { value: cost });
+      console.log("Sending transaction with cost:", ethers.formatEther(cost), "ETH");
+      
+      // Send transaction with gas limit to prevent estimation issues
+      const tx = await escrow.invest(amount, { 
+        value: cost,
+        gasLimit: 300000
+      });
+      console.log("Transaction sent:", tx.hash);
+      
       setTransactionHistory(prev => [...prev, { 
         type: 'Buy Bonds', 
         status: 'Pending', 
-        time: new Date().toLocaleTimeString(), 
-        txHash: tx.hash 
+        time: new Date().toLocaleTimeString() 
       }]);
       showToast('Transaction pending...', 'info');
       
@@ -1320,14 +1516,24 @@ const EcoFiDashboard = () => {
       setTokenAmount('');
     } catch (error) {
       console.error('Buy bonds failed:', error);
+      
+      // Add failed transaction to history
       setTransactionHistory(prev => [...prev, { 
         type: 'Buy Bonds', 
         status: 'Failed', 
         time: new Date().toLocaleTimeString() 
       }]);
+      
       showToast(handleContractError(error), 'error');
     } finally {
       setLoading(false);
+      buyBondsInProgress.current = false; // Reset the protection flag
+      // Re-enable the button after a short delay to ensure UI updates
+      setTimeout(() => {
+        if (investButtonRef.current) {
+          investButtonRef.current.disabled = false;
+        }
+      }, 100);
     }
   };
 
@@ -1354,8 +1560,7 @@ const EcoFiDashboard = () => {
       setTransactionHistory(prev => [...prev, { 
         type: 'Push Impact Data', 
         status: 'Pending', 
-        time: new Date().toLocaleTimeString(), 
-        txHash: tx.hash 
+        time: new Date().toLocaleTimeString() 
       }]);
       
       showToast('Impact data transaction pending...', 'info');
@@ -1397,12 +1602,21 @@ const EcoFiDashboard = () => {
 
   // Handle Oracle Update
   const handleOracleUpdate = async (deltaKwh, deltaCo2Kg) => {
+    // Prevent multiple simultaneous calls
+    if (loading || oracleUpdateInProgress.current) {
+      console.log("Oracle update already in progress");
+      showToast('Transaction already in progress', 'info');
+      return;
+    }
+    
     if (!signer || !selectedProject || !deltaKwh || !deltaCo2Kg) {
       showToast('Please enter valid oracle data', 'error');
       return;
     }
     
+    // Set protection flags
     setLoading(true);
+    oracleUpdateInProgress.current = true;
     
     try {
       const oracleContract = new ethers.Contract(
@@ -1416,8 +1630,7 @@ const EcoFiDashboard = () => {
       setTransactionHistory(prev => [...prev, { 
         type: 'Oracle Update', 
         status: 'Pending', 
-        time: new Date().toLocaleTimeString(), 
-        txHash: tx.hash 
+        time: new Date().toLocaleTimeString() 
       }]);
       
       showToast('Oracle update transaction pending...', 'info');
@@ -1449,20 +1662,68 @@ const EcoFiDashboard = () => {
       showToast(handleContractError(error), 'error');
     } finally {
       setLoading(false);
+      oracleUpdateInProgress.current = false; // Reset the protection flag
     }
   };
 
   // Handle Investment
-  const handleInvest = async () => {
-    if (!signer || !selectedProject || !investAmount) {
+  const handleInvest = async (amount) => {
+    // Prevent multiple simultaneous calls using both loading state and ref
+    if (loading || investmentInProgress.current) {
+      console.log("Investment already in progress, ignoring additional calls");
+      showToast('Transaction already in progress', 'info');
+      return;
+    }
+
+    const investmentAmount = amount || investAmount;
+    
+    // Enhanced validation
+    if (!investmentAmount || parseFloat(investmentAmount) <= 0) {
       showToast('Please enter a valid investment amount', 'error');
       return;
     }
     
+    if (!walletConnected || !walletAddress) {
+      showToast('Please connect your wallet first', 'error');
+      return;
+    }
+    
+    if (!signer) {
+      showToast('Wallet signer not available. Please reconnect your wallet.', 'error');
+      return;
+    }
+    
+    if (!selectedProject) {
+      showToast('Please select a project to invest in', 'error');
+      return;
+    }
+    
+    if (!selectedProject.escrowContract || selectedProject.escrowContract === '0x0000000000000000000000000000000000000000') {
+      showToast('Invalid project contract address', 'error');
+      return;
+    }
+    
+    console.log("Investment details:", {
+      amount: investmentAmount,
+      project: selectedProject?.projectName,
+      escrowContract: selectedProject?.escrowContract,
+      signer: !!signer,
+      walletAddress: walletAddress
+    });
+    
+    // Set both loading state and ref flag
     setLoading(true);
+    investmentInProgress.current = true;
     
     try {
-      const amount = ethers.parseEther(investAmount);
+      const amountEther = ethers.parseEther(investmentAmount);
+      console.log("Parsed amount:", amountEther.toString());
+      
+      // Check wallet balance
+      const balance = await provider.getBalance(walletAddress);
+      if (balance < amountEther) {
+        throw new Error('Insufficient balance for this investment');
+      }
       
       // Get escrow contract with signer
       const escrowContract = new ethers.Contract(
@@ -1471,10 +1732,40 @@ const EcoFiDashboard = () => {
         signer
       );
       
-      const tx = await escrowContract.buyBonds({ value: amount });
-      await tx.wait();
+      // Check if sale is still active
+      const saleEnd = await escrowContract.saleEnd();
+      const currentTime = Math.floor(Date.now() / 1000);
+      if (currentTime > saleEnd) {
+        throw new Error('Sale period has ended for this project');
+      }
       
-      showToast(`Successfully invested ${investAmount} ETH in ${selectedProject.projectName}!`, 'success');
+      console.log("Calling buyBonds with value:", amountEther.toString());
+      const tx = await escrowContract.buyBonds({ 
+        value: amountEther,
+        gasLimit: 300000 // Add gas limit for better reliability
+      });
+      console.log("Transaction sent:", tx.hash);
+      
+      // Add transaction to history immediately
+      setTransactionHistory(prev => [...prev, {
+        type: `Investment in ${selectedProject.projectName}`,
+        amount: `${investmentAmount} ETH`,
+        status: 'Pending',
+        time: new Date().toLocaleTimeString(),
+        txHash: tx.hash
+      }]);
+      
+      showToast('Transaction submitted. Waiting for confirmation...', 'info');
+      
+      await tx.wait();
+      console.log("Transaction confirmed");
+      
+      // Update transaction status
+      setTransactionHistory(prev => prev.map(t => 
+        t.txHash === tx.hash ? {...t, status: 'Success'} : t
+      ));
+      
+      showToast(`Successfully invested ${investmentAmount} ETH in ${selectedProject.projectName}!`, 'success');
       setShowInvestModal(false);
       setInvestAmount('');
       
@@ -1487,6 +1778,7 @@ const EcoFiDashboard = () => {
       showToast(handleContractError(error), 'error');
     } finally {
       setLoading(false);
+      investmentInProgress.current = false; // Reset the ref flag
     }
   };
 
@@ -1638,6 +1930,9 @@ const EcoFiDashboard = () => {
     <button
       onClick={connectWallet}
       disabled={connecting || loading}
+      className
+      onClick={connectWallet}
+      disabled={connecting || loading}
       className="flex items-center gap-2 bg-gradient-to-r from-custom-purple to-bright-purple text-white px-6 py-3 rounded-lg font-semibold shadow-lg hover:shadow-purple-500/30 transition-all duration-300 disabled:opacity-50"
     >
       {connecting ? (
@@ -1770,7 +2065,7 @@ const EcoFiDashboard = () => {
             type="text"
             value={simAmount}
             onChange={(e) => setSimAmount(e.target.value)}
-            onBlur={calculateInvestment}
+                       onBlur={calculateInvestment}
             className="w-full p-3 bg-white/10 backdrop-blur-sm text-white border border-white/20 rounded-xl text-lg placeholder-white/60 focus:border-white/40 focus:bg-white/15 focus:outline-none transition-all duration-300"
             placeholder="0.01"
           />
@@ -1778,18 +2073,20 @@ const EcoFiDashboard = () => {
 
         <div className="grid grid-cols-1 gap-3">
           <div className="bg-gray-800/50 p-3 rounded-lg">
-            <div className="text-gray-400 text-xs">Tokens Received</div>
+            <div className="text-gray-400 text-xs mb-1">Tokens Received</div>
             <div className="text-white text-lg font-semibold">{simResults.tokens} GBOND</div>
           </div>
 
           <div className="bg-gray-800/50 p-3 rounded-lg">
-            <div className="text-gray-400 text-xs">Est. Environmental Impact</div>
+            <div className="text-gray-400 text-xs mb-1">Est. Environmental Impact</div>
             <div className="text-white text-lg font-semibold">{simResults.impact} kWh</div>
-            <div className="text-gray-400 text-xs">≈ {Math.round(simResults.impact * (parseFloat(process.env.REACT_APP_CO2_PER_KWH) || 0.4))} kg CO₂ reduced</div>
+            <div className="text-gray-400 text-xs">
+              ≈ {Math.round(simResults.impact * (parseFloat(process.env.REACT_APP_CO2_PER_KWH) || 0.4))} kg CO₂ reduced
+            </div>
           </div>
 
           <div className="bg-gray-800/50 p-3 rounded-lg">
-            <div className="text-gray-400 text-xs">💰 Potential Returns</div>
+            <div className="text-gray-400 text-xs mb-1">💰 Potential Returns</div>
             <div className="text-white text-lg font-semibold">{simResults.returns} ETH</div>
             <div className="text-gray-400 text-xs">Based on milestone achievements</div>
           </div>
@@ -1805,7 +2102,7 @@ const EcoFiDashboard = () => {
     );
   };
 
-  // Enhanced Milestone Progress Component
+  // Enhanced Milestone Progress Component with Project Selection
   const MilestoneProgress = () => (
     <div className="glass-card p-4 rounded-xl">
       <div className="flex items-center justify-between mb-4">
@@ -1815,10 +2112,35 @@ const EcoFiDashboard = () => {
         </div>
       </div>
 
-      {milestones.length === 0 ? (
+      {/* Project Selection for Milestones */}
+      <div className="mb-4">
+        <select
+          value={selectedProject?.id || ''}
+          onChange={(e) => {
+            const projectId = e.target.value;
+            const project = allProjects.find(p => p.id === projectId);
+            selectProject(project);
+          }}
+          className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm"
+        >
+          <option value="" className="bg-gray-800">Select project to view milestones...</option>
+          {allProjects.map(project => (
+            <option key={project.id} value={project.id} className="bg-gray-800">
+              {project.projectName} - {project.description}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {!selectedProject ? (
         <div className="text-gray-400 text-center py-8">
           <Target className="w-8 h-8 mx-auto mb-2 opacity-50" />
-          <div>No milestones defined</div>
+          <div>Select a project to view milestones</div>
+        </div>
+      ) : milestones.length === 0 ? (
+        <div className="text-gray-400 text-center py-8">
+          <Target className="w-8 h-8 mx-auto mb-2 opacity-50" />
+          <div>No milestones defined for this project</div>
         </div>
       ) : (
         <div className="space-y-4">
@@ -1951,7 +2273,7 @@ const EcoFiDashboard = () => {
     </div>
   );
 
-  // Enhanced Impact Metrics Component
+  // Enhanced Impact Metrics Component with Project Selection
   const ImpactMetrics = () => {
     // Calculate additional impact metrics
     const co2PerHousehold = environmentalImpact.co2Reduced / 2.5; // Average annual CO2 per US household
@@ -1968,8 +2290,38 @@ const EcoFiDashboard = () => {
           </div>
         </div>
 
-        {/* Primary Impact Metrics */}
-        <div className="grid grid-cols-2 gap-3 mb-6">
+        {/* Project Selection for Impact Metrics */}
+        <div className="mb-4">
+          <select
+            value={selectedProject?.id || ''}
+            onChange={(e) => {
+              const projectId = e.target.value;
+              const project = allProjects.find(p => p.id === projectId);
+              setSelectedProject(project);
+              if (project) {
+                fetchContractData(provider, walletAddress);
+              }
+            }}
+            className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm"
+          >
+            <option value="" className="bg-gray-800">Select project to view impact...</option>
+            {allProjects.map(project => (
+              <option key={project.id} value={project.id} className="bg-gray-800">
+                {project.projectName} - {project.description}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {!selectedProject ? (
+          <div className="text-gray-400 text-center py-8">
+            <Leaf className="w-8 h-8 mx-auto mb-2 opacity-50" />
+            <div>Select a project to view environmental impact</div>
+          </div>
+        ) : (
+          <>
+            {/* Primary Impact Metrics */}
+            <div className="grid grid-cols-2 gap-3 mb-6">
           <div className="bg-gradient-to-br from-green-500/10 to-green-600/10 border border-green-500/20 p-4 rounded-lg hover:shadow-lg hover:shadow-green-500/10 transition-all duration-300">
             <div className="flex items-center gap-3 mb-2">
               <div className="p-2 bg-green-500/20 rounded-lg">
@@ -2120,17 +2472,41 @@ const EcoFiDashboard = () => {
             </div>
           </div>
         </div>
+        </>
+        )}
       </div>
     );
   };
 
-  // Transaction History Component
+  // Transaction History Component with Project Selection
   const TransactionHistoryComponent = ({ transactions, onClose }) => (
     <div className="glass-card p-4 rounded-xl">
       <h3 className="text-white text-lg font-semibold mb-3">Transaction History</h3>
 
-      {transactions && transactions.length === 0 ? (
-        <div className="text-gray-400 text-center py-4">No transactions yet</div>
+      {/* Project Selection for Transaction History */}
+      <div className="mb-4">
+        <select
+          value={selectedProject?.id || ''}
+          onChange={(e) => {
+            const projectId = e.target.value;
+            const project = allProjects.find(p => p.id === projectId);
+            selectProject(project);
+          }}
+          className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm"
+        >
+          <option value="" className="bg-gray-800">Select project to view transactions...</option>
+          {allProjects.map(project => (
+            <option key={project.id} value={project.id} className="bg-gray-800">
+              {project.projectName} - {project.description}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {!selectedProject ? (
+        <div className="text-gray-400 text-center py-4">Select a project to view transactions</div>
+      ) : transactions && transactions.length === 0 ? (
+        <div className="text-gray-400 text-center py-4">No transactions yet for this project</div>
       ) : (
         <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
           {transactions && transactions.map((tx, index) => (
@@ -2200,15 +2576,25 @@ const EcoFiDashboard = () => {
         <div className="flex gap-3">
           <button
             onClick={() => setShowInvestModal(false)}
-            className="flex-1 bg-gray-700 text-white px-4 py-3 rounded-lg font-semibold"
+            className="flex-1 bg-gray-700 text-white px-4 py-3 rounded-lg hover:bg-gray-600 transition-colors"
           >
             Cancel
           </button>
           
           <button
-            onClick={buyBonds}
-            disabled={loading || !tokenAmount}
-            className="flex-1 bg-gradient-to-r from-green-600 to-green-500 text-white px-4 py-3 rounded-lg font-semibold disabled:opacity-50"
+            ref={investButtonRef}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              e.currentTarget.disabled = true; // Immediately disable button
+              if (!loading && !buyBondsInProgress.current && tokenAmount) {
+                buyBonds();
+              } else {
+                e.currentTarget.disabled = false; // Re-enable if conditions not met
+              }
+            }}
+            disabled={loading || !tokenAmount || buyBondsInProgress.current}
+            className="flex-1 bg-gradient-to-r from-green-500 to-blue-500 text-white px-4 py-3 rounded-lg hover:from-green-600 hover:to-blue-600 disabled:opacity-50"
           >
             {loading ? (
               <span className="flex items-center justify-center gap-2">
@@ -2276,7 +2662,7 @@ const EcoFiDashboard = () => {
             </div>
             <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
               <div 
-                className="h-full bg-gradient-to-r from-green-500 to-green-400"
+                className="bg-gradient-to-r from-green-500 to-blue-500 h-2 rounded-full transition-all duration-300"
                 style={{ width: `${project.progress}%` }}
               />
             </div>
@@ -2432,7 +2818,12 @@ const EcoFiDashboard = () => {
                   </div>
                   
                   <div className="space-y-6">
-                    <InvestmentCalculator />
+                    <InvestmentCalculator 
+                      project={selectedProject}
+                      onClose={() => {}}
+                      allProjects={allProjects}
+                      onProjectSelect={selectProject}
+                    />
                     <TransactionHistoryComponent />
                   </div>
                 </div>
@@ -2516,10 +2907,7 @@ const EcoFiDashboard = () => {
                       <ProjectSelector
                         projects={allProjects}
                         selectedProject={selectedProject}
-                        onProjectSelect={(project) => {
-                          setSelectedProject(project);
-                          checkCurrentProjectIssuer(project);
-                        }}
+                        onProjectSelect={selectProject}
                       />
                     </div>
 
@@ -2575,19 +2963,32 @@ const EcoFiDashboard = () => {
                             {/* Single Investment Button for Investors */}
                             {!isCurrentProjectIssuer && !selectedProject.saleClosed && (
                               <button
-                                onClick={() => setShowInvestModal(true)}
-                                className="flex-1 bg-gradient-to-r from-green-500 to-blue-500 text-white px-6 py-3 rounded-lg hover:from-green-600 hover:to-blue-600 transition-all duration-300 font-medium"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  if (!loading && !showInvestModal) {
+                                    setShowInvestModal(true);
+                                  }
+                                }}
+                                disabled={loading || showInvestModal}
+                                className="flex-1 bg-gradient-to-r from-green-500 to-blue-500 text-white px-6 py-3 rounded-lg hover:from-green-600 hover:to-blue-600 transition-all duration-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 <DollarSign className="w-5 h-5 inline mr-2" />
-                                Invest Now
+                                {loading ? 'Processing...' : 'Invest Now'}
                               </button>
                             )}
 
                             {/* Fund Release Button for Issuers */}
                             {isCurrentProjectIssuer && selectedProject.totalRaised > 0n && (
                               <button
-                                onClick={() => releaseFunds(selectedProject)}
-                                disabled={loading}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  if (!loading && !releaseFundsInProgress.current) {
+                                    releaseFunds(selectedProject);
+                                  }
+                                }}
+                                disabled={loading || releaseFundsInProgress.current}
                                 className="flex-1 bg-gradient-to-r from-blue-500 to-purple-500 text-white px-6 py-3 rounded-lg hover:from-blue-600 hover:to-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 font-medium"
                               >
                                 <TrendingUp className="w-5 h-5 inline mr-2" />
@@ -2595,19 +2996,6 @@ const EcoFiDashboard = () => {
                               </button>
                             )}
                           </div>
-
-                          {/* Issuer Status */}
-                          {isCurrentProjectIssuer && (
-                            <div className="bg-blue-500/20 border border-blue-400/30 rounded-lg p-4 mb-6">
-                              <div className="flex items-center gap-2 text-blue-400 font-medium">
-                                <Building2 className="w-5 h-5" />
-                                You are the project issuer
-                              </div>
-                              <div className="text-blue-300 text-sm mt-1">
-                                You can release funds when milestones are achieved and manage project settings.
-                              </div>
-                            </div>
-                          )}
 
                           {/* Investor Status */}
                           {!isCurrentProjectIssuer && (
@@ -2621,17 +3009,6 @@ const EcoFiDashboard = () => {
                               </div>
                             </div>
                           )}
-
-                          {/* Project Access Notice */}
-                          <div className="bg-purple-500/20 border border-purple-400/30 rounded-lg p-4">
-                            <div className="flex items-center gap-2 text-purple-400 font-medium">
-                              <Lock className="w-5 h-5" />
-                              Project Access
-                            </div>
-                            <div className="text-purple-300 text-sm mt-1">
-                              This project is available only for the designated issuer. Investors can participate through the investment simulator.
-                            </div>
-                          </div>
                         </div>
                       </div>
                     )}
@@ -2705,8 +3082,15 @@ const EcoFiDashboard = () => {
                           Cancel
                         </button>
                         <button
-                          onClick={createProject}
-                          className="flex-1 bg-gradient-to-r from-green-500 to-blue-500 text-white px-6 py-3 rounded-lg hover:from-green-600 hover:to-blue-600 transition-all duration-300"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (!loading && !createProjectInProgress.current) {
+                              createProject();
+                            }
+                          }}
+                          disabled={loading || createProjectInProgress.current}
+                          className="flex-1 bg-gradient-to-r from-green-500 to-blue-500 text-white px-6 py-3 rounded-lg hover:from-green-600 hover:to-blue-600 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           Create Project
                         </button>
@@ -2808,22 +3192,22 @@ const EcoFiDashboard = () => {
                     
                     <div className="grid grid-cols-2 gap-3">
                       <div className="bg-gray-800/50 p-3 rounded-lg">
-                        <div className="text-gray-400 text-xs">Total Raised</div>
+                        <div className="text-gray-400 text-xs mb-1">Total Raised</div>
                         <div className="text-white text-lg font-semibold">{totalRaised} ETH</div>
                       </div>
                       
                       <div className="bg-gray-800/50 p-3 rounded-lg">
-                        <div className="text-gray-400 text-xs">Total Released</div>
+                        <div className="text-gray-400 text-xs mb-1">Total Released</div>
                         <div className="text-white text-lg font-semibold">{totalReleased} ETH</div>
                       </div>
                       
                       <div className="bg-gray-800/50 p-3 rounded-lg">
-                        <div className="text-gray-400 text-xs">Tokens Sold</div>
+                        <div className="text-gray-400 text-xs mb-1">Tokens Sold</div>
                         <div className="text-white text-lg font-semibold">{tokensSold} / {capTokens} GBOND</div>
                       </div>
                       
                       <div className="bg-gray-800/50 p-3 rounded-lg">
-                        <div className="text-gray-400 text-xs">Investors</div>
+                        <div className="text-gray-400 text-xs mb-1">Investors</div>
                         <div className="text-white text-lg font-semibold">
                           {/* This would need to be tracked on the contract */}
                           {Math.floor(Math.random() * 20) + 1}
@@ -2831,7 +3215,7 @@ const EcoFiDashboard = () => {
                       </div>
                       
                       <div className="bg-gray-800/50 p-3 rounded-lg">
-                        <div className="text-gray-400 text-xs">Sale Ends In</div>
+                        <div className="text-gray-400 text-xs mb-1">Sale Ends In</div>
                         <div className="text-white text-lg font-semibold">
                           {saleEnd > Date.now() / 1000 
                             ? `${Math.floor((saleEnd - Date.now() / 1000) / 86400)} days` 
@@ -2865,7 +3249,7 @@ const EcoFiDashboard = () => {
         <InvestmentCalculator
           project={selectedProject}
           allProjects={allProjects}
-          onProjectSelect={setSelectedProject}
+          onProjectSelect={selectProject}
           onClose={(openInvest) => {
             setShowCalculator(false);
             if (openInvest) setShowInvestModal(true);
@@ -2886,7 +3270,7 @@ const EcoFiDashboard = () => {
         <OracleSimulator
           project={selectedProject}
           allProjects={allProjects}
-          onProjectSelect={setSelectedProject}
+          onProjectSelect={selectProject}
           onClose={() => setShowOracleSimulator(false)}
           onUpdate={handleOracleUpdate}
           loading={loading}
