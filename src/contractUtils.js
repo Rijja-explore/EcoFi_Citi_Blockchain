@@ -8,11 +8,25 @@ import ImpactOracleArtifact from './Backend/artifacts/contracts/ImpactOracle.sol
 
 // Environment variables (dynamically loaded each time)
 function getContractAddresses() {
+  // Validate required environment variables
+  if (!process.env.REACT_APP_ESCROW_ADDRESS) {
+    throw new Error('REACT_APP_ESCROW_ADDRESS environment variable is required');
+  }
+  if (!process.env.REACT_APP_ORACLE_ADDRESS) {
+    throw new Error('REACT_APP_ORACLE_ADDRESS environment variable is required');
+  }
+  if (!process.env.REACT_APP_UPDATER_ADDRESS) {
+    throw new Error('REACT_APP_UPDATER_ADDRESS environment variable is required');
+  }
+  if (!process.env.REACT_APP_CHAIN_ID) {
+    throw new Error('REACT_APP_CHAIN_ID environment variable is required');
+  }
+
   const addresses = {
-    escrow: process.env.REACT_APP_ESCROW_ADDRESS || '0x68B1D87F95878fE05B998F19b66F4baba5De1aed',
-    oracle: process.env.REACT_APP_ORACLE_ADDRESS || '0x3Aa5ebB10DC797CAC828524e59A333d0A371443c',
-    updater: process.env.REACT_APP_UPDATER_ADDRESS || '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
-    chainId: process.env.REACT_APP_CHAIN_ID ? parseInt(process.env.REACT_APP_CHAIN_ID) : 31337
+    escrow: process.env.REACT_APP_ESCROW_ADDRESS,
+    oracle: process.env.REACT_APP_ORACLE_ADDRESS,
+    updater: process.env.REACT_APP_UPDATER_ADDRESS,
+    chainId: parseInt(process.env.REACT_APP_CHAIN_ID)
   };
   
   console.log('🔧 Contract addresses loaded from environment:');
@@ -208,18 +222,17 @@ export function getContracts(signerOrProvider) {
  * @returns {ethers.Wallet|null} Oracle wallet or null if key not available
  */
 export function getOracleWallet(provider) {
-  const oracleUpdaterKey = process.env.REACT_APP_ORACLE_UPDATER_KEY || '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
+  const oracleUpdaterKey = process.env.REACT_APP_ORACLE_UPDATER_KEY;
   
   if (!oracleUpdaterKey) {
-    console.warn('Oracle updater key not found in environment variables');
-    return null;
+    throw new Error('REACT_APP_ORACLE_UPDATER_KEY environment variable is required for oracle operations');
   }
   
   try {
     return new ethers.Wallet(oracleUpdaterKey, provider);
   } catch (error) {
     console.error('Failed to create oracle wallet:', error);
-    return null;
+    throw new Error('Invalid oracle updater key format');
   }
 }
 
@@ -263,11 +276,6 @@ export function formatMilestones(milestones) {
 export function handleContractError(error) {
   console.error('Contract error:', error);
   
-  // Handle MetaMask specific errors first
-  if (error.code === "ACTION_REJECTED") {
-    return 'Transaction was cancelled in MetaMask';
-  }
-  
   // Extract reason from error
   if (error.reason) {
     return `Transaction failed: ${error.reason}`;
@@ -276,10 +284,8 @@ export function handleContractError(error) {
   // Check for common error messages
   if (error.message) {
     // User rejected the transaction
-    if (error.message.includes('user rejected') || 
-        error.message.includes('User denied') || 
-        error.message.includes('transaction failed')) {
-      return 'Transaction was rejected or failed in MetaMask';
+    if (error.message.includes('user rejected') || error.message.includes('User denied')) {
+      return 'Transaction was rejected in MetaMask';
     }
     
     // Insufficient funds
@@ -287,36 +293,10 @@ export function handleContractError(error) {
       return 'Insufficient ETH for this transaction. Please add funds to your wallet.';
     }
     
-    // Nonce errors
-    if (error.message.includes('nonce') || 
-        error.message.includes('replacement fee too low')) {
-      return 'Transaction nonce error. Please try again or reset your MetaMask account.';
-    }
-    
     // Execution reverted
     if (error.message.includes('execution reverted')) {
       const revertReason = error.message.match(/reverted: (.+?)(?:'|")/);
-      if (revertReason) {
-        const reason = revertReason[1];
-        // Provide specific messages for common revert reasons
-        if (reason.includes('sale inactive')) {
-          return 'Bond sale is not currently active. Please wait for the sale to begin.';
-        }
-        if (reason.includes('sale not closed')) {
-          return 'Bond sale must be closed before submitting impact data.';
-        }
-        if (reason.includes('not issuer')) {
-          return 'Only the project issuer can perform this action.';
-        }
-        if (reason.includes('not oracle')) {
-          return 'Only the oracle can submit impact metrics.';
-        }
-        if (reason.includes('cap exceeded')) {
-          return 'Token purchase would exceed the sale cap. Try a smaller amount.';
-        }
-        return `Transaction reverted: ${reason}`;
-      }
-      return 'Transaction reverted by the contract';
+      return revertReason ? `Transaction reverted: ${revertReason[1]}` : 'Transaction reverted by the contract';
     }
     
     // Network/connection issues
@@ -345,15 +325,6 @@ export function handleContractError(error) {
       return 'Transaction failed due to gas estimation. The transaction might revert.';
     }
   }
-  
-  // Log detailed error for debugging
-  console.log('Detailed error information:', {
-    code: error.code,
-    message: error.message,
-    data: error.data,
-    transaction: error.transaction?.hash,
-    reason: error.reason
-  });
   
   // Default error message
   return 'Transaction failed. Please check the console for more details.';
@@ -491,8 +462,11 @@ export async function pushImpactData(signer, deltaKwh, deltaCO2) {
       co2BigInt: co2BigInt.toString()
     });
     
-    // Send transaction
-    return await oracle.pushImpact(kwhBigInt, co2BigInt);
+    // Send transaction with higher gas limit to ensure it goes through
+    console.log('Sending pushImpact transaction...');
+    const tx = await oracle.pushImpact(kwhBigInt, co2BigInt, { gasLimit: 500000 });
+    console.log('Transaction sent:', tx.hash);
+    return tx;
   } catch (error) {
     console.error('Push impact failed:', error);
     throw error;
