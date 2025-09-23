@@ -1,0 +1,226 @@
+================================================================================
+                     ECOFI GREEN BOND PLATFORM - QUICK REFERENCE
+================================================================================
+
+📋 ESSENTIAL SETUP & RUNNING COMMANDS
+
+================================================================================
+🚀 STEP-BY-STEP STARTUP (Copy & Paste Ready)
+================================================================================
+
+TERMINAL 1 - BLOCKCHAIN NODE:
+-----------------------------
+cd "D:\Projects\EcoFi\EcoFi_Citi_Blockchain\src\Backend"
+npx hardhat node --port 8545
+
+Expected: "Started HTTP and WebSocket JSON-RPC server at http://127.0.0.1:8545"
+Status: Keep this terminal open throughout development
+
+
+TERMINAL 2 - DEPLOY CONTRACTS:
+------------------------------
+cd "D:\Projects\EcoFi\EcoFi_Citi_Blockchain\src\Backend"
+npx hardhat run scripts/deployCombined.js --network localhost
+
+Expected: Contract addresses displayed + .env file auto-updated
+Status: Can close this terminal after deployment
+
+
+TERMINAL 3 - START REACT APP:
+-----------------------------
+cd "D:\Projects\EcoFi\EcoFi_Citi_Blockchain"
+npm start
+
+Expected: Browser opens at http://localhost:3000
+Status: Keep this terminal open for development
+
+================================================================================
+🔧 METAMASK CONFIGURATION
+================================================================================
+
+NETWORK SETUP:
+- Network Name: Hardhat Local
+- RPC URL: http://127.0.0.1:8545
+- Chain ID: 31337
+- Currency Symbol: ETH
+
+IMPORT ISSUER ACCOUNT:
+- Private Key: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+- Address: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+- Balance: 10,000 ETH
+
+IMPORT UPDATER ACCOUNT (Optional):
+- Private Key: 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+- Address: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+
+================================================================================
+🛠️ TROUBLESHOOTING COMMANDS
+================================================================================
+
+CONNECTION REFUSED ERROR:
+-------------------------
+1. Check if blockchain is running: netstat -an | findstr 8545
+2. Restart blockchain: cd src/Backend && npx hardhat node --port 8545
+
+BAD_DATA CONTRACT ERRORS:
+-------------------------
+1. Stop React app (Ctrl+C in Terminal 3)
+2. Redeploy contracts: cd src/Backend && npx hardhat run scripts/deployCombined.js --network localhost
+3. Restart React: cd ../.. && npm start
+
+REACT APP WON'T START:
+---------------------
+1. Check port 3000: netstat -an | findstr 3000
+2. Clear cache: rmdir /s node_modules && npm install
+3. Kill processes: taskkill /f /im node.exe
+4. Restart: npm start
+
+METAMASK ISSUES:
+---------------
+1. Reset account in MetaMask Advanced settings
+2. Switch network to Hardhat Local (Chain ID: 31337)
+3. Refresh browser page
+4. Reconnect wallet
+
+COMPLETE RESET:
+--------------
+1. Ctrl+C all terminals
+2. cd src/Backend && npx hardhat node --port 8545
+3. New terminal: cd src/Backend && npx hardhat run scripts/deployCombined.js --network localhost
+4. New terminal: cd ../.. && npm start
+5. Reset MetaMask account
+6. Refresh browser
+
+================================================================================
+📊 PLATFORM TESTING WORKFLOW
+================================================================================
+
+INVESTMENT TESTING:
+------------------
+1. Connect MetaMask wallet
+2. Use Investment Simulator → Enter amount → Calculate
+3. Click "Invest in Bonds" → Confirm transaction
+4. Check portfolio balance updates
+
+ENVIRONMENTAL IMPACT TESTING:
+----------------------------
+1. Go to Oracle Simulator section
+2. Use Quick Fill buttons (Small Update: 1M kWh)
+3. Click "Submit Impact Data" → Confirm transaction
+4. Wait 2-3 seconds for Environmental Impact panel to update
+
+MILESTONE TESTING:
+-----------------
+Current Milestones: 5M, 10M, 20M, 35M, 50M, 75M kWh
+- Submit multiple impact updates to reach milestones
+- Watch fund release percentages: 16.66%, 16.67%, 16.67%, 16.67%, 20%, 25%
+
+CERTIFICATE TESTING:
+-------------------
+1. Complete investment and impact submission
+2. Click "Download Certificate" button
+3. Browser print dialog opens → Save as PDF
+
+================================================================================
+🔍 IMPORTANT FILE LOCATIONS
+================================================================================
+
+CONFIGURATION:
+- Main config: .env (auto-updated on deployment)
+- Contract artifacts: src/artifacts/contracts/
+
+KEY COMPONENTS:
+- Main dashboard: src/EcoFiDashboard.js
+- Contract utilities: src/contractUtils.js
+- Smart contracts: src/Backend/contracts/
+
+DEPLOYMENT:
+- Deploy script: src/Backend/scripts/deployCombined.js
+- Hardhat config: src/Backend/hardhat.config.cjs
+
+================================================================================
+📱 CURRENT CONTRACT ADDRESSES (Updated on Deployment)
+================================================================================
+
+ESCROW CONTRACT: 0x5FC8d32690cc91D4c39d9d3abcBD16989F875707
+ORACLE CONTRACT: 0x0165878A594ca255338adfa4d48449f69242Eb8F
+
+Note: These addresses change with each new deployment
+Check .env file for current addresses after deployment
+
+================================================================================
+⚡ QUICK COMMANDS REFERENCE
+================================================================================
+
+START EVERYTHING:
+# Terminal 1
+cd "D:\Projects\EcoFi\EcoFi_Citi_Blockchain\src\Backend" && npx hardhat node --port 8545
+
+# Terminal 2 (wait for Terminal 1 to start)
+cd "D:\Projects\EcoFi\EcoFi_Citi_Blockchain\src\Backend" && npx hardhat run scripts/deployCombined.js --network localhost
+
+# Terminal 3 (wait for Terminal 2 to complete)
+cd "D:\Projects\EcoFi\EcoFi_Citi_Blockchain" && npm start
+
+INSTALL DEPENDENCIES:
+npm install && cd src/Backend && npm install && cd ../..
+
+RUN TESTS:
+cd src/Backend && npx hardhat test
+
+CHECK RUNNING PROCESSES:
+netstat -an | findstr "3000\|8545"
+
+KILL ALL NODE PROCESSES:
+taskkill /f /im node.exe
+
+================================================================================
+🎯 FEATURES TO DEMONSTRATE
+================================================================================
+
+✅ 6 Enterprise-Scale Milestones (5M-75M kWh)
+✅ Beautiful Glass UI with Transparent Input Fields
+✅ Real-Time Environmental Impact Tracking
+✅ Professional PDF Certificate Generation
+✅ Investment Portfolio Management
+✅ Oracle Data Submission with Quick-Fill Buttons
+✅ Automated Fund Releases Based on Milestones
+✅ Role-Based Access (Investor/Operator/Issuer)
+
+================================================================================
+📞 EMERGENCY FIXES
+================================================================================
+
+IF EVERYTHING BREAKS:
+1. taskkill /f /im node.exe
+2. cd "D:\Projects\EcoFi\EcoFi_Citi_Blockchain"
+3. rmdir /s node_modules && npm install
+4. cd src/Backend && rmdir /s node_modules && npm install
+5. Follow startup sequence above
+
+IF .ENV GETS CORRUPTED:
+Copy this template to .env:
+
+ESCROW_ADDRESS=0x5FC8d32690cc91D4c39d9d3abcBD16989F875707
+ORACLE_ADDRESS=0x0165878A594ca255338adfa4d48449f69242Eb8F
+UPDATER_ADDRESS=0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+ISSUER_ADDRESS=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+ORACLE_UPDATER_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+CHAIN_ID=31337
+RPC_URL=http://127.0.0.1:8545
+REACT_APP_ESCROW_ADDRESS=0x5FC8d32690cc91D4c39d9d3abcBD16989F875707
+REACT_APP_ORACLE_ADDRESS=0x0165878A594ca255338adfa4d48449f69242Eb8F
+REACT_APP_UPDATER_ADDRESS=0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+REACT_APP_ISSUER_ADDRESS=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+REACT_APP_ORACLE_UPDATER_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+REACT_APP_CHAIN_ID=31337
+REACT_APP_RPC_URL=http://127.0.0.1:8545
+REACT_APP_CO2_PER_KWH=0.4
+REACT_APP_TREES_PER_KWH=0.02
+REACT_APP_WATER_PER_KWH=0.5
+REACT_APP_SHOW_DEMO_DATA=false
+
+================================================================================
+
+💡 REMEMBER: Always start in order: Blockchain → Deploy → Frontend → MetaMask
+🎉 Your EcoFi platform is ready to revolutionize green finance! 🌱💚

@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {BondToken} from "./BondToken.sol";
 
-/// @title GreenBondEscrow - sale, escrow, and milestone-based fund release
+/// @title GreenBondEscrow - sale, escrow, and milestone-based fund release with investor returns
 contract GreenBondEscrow is ReentrancyGuard {
     struct Milestone {
         uint256 threshold; // e.g., cumulative kWh or tons CO2 captured
@@ -18,6 +18,9 @@ contract GreenBondEscrow is ReentrancyGuard {
     event MetricSubmitted(uint256 newValue, uint256 cumulativeValue);
     event MilestoneAchieved(uint256 indexed idx, uint256 threshold, uint16 bps);
     event FundsReleased(uint256 amountWei, address to);
+    event YieldDistributed(uint256 totalYield, uint256 timestamp);
+    event YieldClaimed(address indexed investor, uint256 amount);
+    event BondRedeemed(address indexed investor, uint256 tokenAmount, uint256 redemptionValue);
 
     address public issuer; // project owner / recipient
     address public oracle; // address allowed to push metrics
@@ -36,6 +39,14 @@ contract GreenBondEscrow is ReentrancyGuard {
     uint256 public totalReleased; // wei sent to issuer
 
     Milestone[] public milestones;
+
+    // Investor returns system
+    uint256 public maturityDate; // When bonds can be redeemed
+    uint256 public annualYieldBps; // Annual yield in basis points (e.g., 500 = 5%)
+    uint256 public totalYieldDistributed; // Total yield paid to investors
+    uint256 public yieldPerToken; // Accumulated yield per token
+    mapping(address => uint256) public lastClaimedYield; // Last yield snapshot per investor
+    mapping(address => uint256) public claimableYield; // Pending yield per investor
 
     modifier onlyIssuer() {
         require(msg.sender == issuer, "not issuer");
@@ -67,11 +78,15 @@ contract GreenBondEscrow is ReentrancyGuard {
         uint256 saleStart_,
         uint256 saleEnd_,
         uint256[] memory thresholds_, // metric thresholds per milestone
-        uint16[] memory bps_ // basis points per milestone (sum == 10000)
+        uint16[] memory bps_, // basis points per milestone (sum == 10000)
+        uint256 maturityMonths_, // bond maturity in months
+        uint256 annualYieldBps_ // annual yield in basis points (e.g., 500 = 5%)
     ) {
         require(issuer_ != address(0) && oracle_ != address(0), "bad addr");
         require(saleStart_ < saleEnd_, "bad window");
         require(capTokens_ > 0 && priceWeiPerToken_ > 0, "bad params");
+        require(maturityMonths_ > 0 && maturityMonths_ <= 120, "bad maturity"); // 1-10 years
+        require(annualYieldBps_ <= 2000, "yield too high"); // Max 20% annual yield
         require(
             thresholds_.length == bps_.length && thresholds_.length > 0,
             "bad milestones"
@@ -97,6 +112,8 @@ contract GreenBondEscrow is ReentrancyGuard {
         priceWeiPerToken = priceWeiPerToken_;
         saleStart = saleStart_;
         saleEnd = saleEnd_;
+        maturityDate = saleEnd_ + (maturityMonths_ * 30 days); // Approximate months
+        annualYieldBps = annualYieldBps_;
 
         // deploy the ERC20 and set minter to this contract
         BondToken t = new BondToken(name_, symbol_, issuer);
