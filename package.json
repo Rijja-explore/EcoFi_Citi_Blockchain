@@ -23,14 +23,7 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject",
-    "deploy": "cd src/Backend && npx hardhat run scripts/deployEnhanced.js --network localhost",
-    "deploy:check": "cd src/Backend && npx hardhat run scripts/deployCombined.js --network localhost",
-    "env:check": "node validateEnv.js check",
-    "env:sync": "node validateEnv.js sync", 
-    "env:fix": "node validateEnv.js both",
-    "start:node": "cd src/Backend && npx hardhat node --hostname 127.0.0.1",
-    "start:full": "npm run env:check && npm run start"
+    "eject": "react-scripts eject"
   },
   "eslintConfig": {
     "extends": [

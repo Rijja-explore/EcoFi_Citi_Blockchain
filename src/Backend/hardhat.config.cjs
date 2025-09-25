@@ -3,16 +3,7 @@ require("dotenv").config();
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
-  solidity: {
-    version: "0.8.28",
-    settings: {
-      optimizer: {
-        enabled: true,
-        runs: 200,
-      },
-      viaIR: true, // Enables IR-based code generator to fix "Stack too deep" errors
-    },
-  },
+  solidity: "0.8.28",
   networks: {
     hardhat: {
       chainId: 31337,
